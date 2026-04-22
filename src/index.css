@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; }
+  .font-body { font-family: 'DM Sans', system-ui, sans-serif; }
+  .font-mono-custom { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .paper-bg {
+    background-color: #FAF7F2;
+    background-image:
+      radial-gradient(at 0% 0%, rgba(27,107,122,0.04) 0%, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(199,81,70,0.03) 0%, transparent 50%);
+  }
+
+  .cell-hover:hover { background-color: rgba(27,107,122,0.06); }
+
+  .section-header {
+    font-family: 'Fraunces', serif;
+    letter-spacing: 0.02em;
+  }
+
+  .assignment-cell {
+    transition: background-color 120ms ease, box-shadow 120ms ease;
+  }
+  .assignment-cell.empty {
+    background-color: rgba(15,23,42,0.02);
+  }
+
+  .tab-underline::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #1B6B7A;
+  }
+
+  .warn-pulse { animation: warn-pulse 2s ease-in-out infinite; }
+}
+
+select.cell-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: #0F172A;
+  padding: 4px 6px;
+}
+select.cell-select:focus {
+  box-shadow: inset 0 0 0 2px #1B6B7A;
+  border-radius: 2px;
+}
+
+input.cell-input, textarea.cell-input {
+  width: 100%;
+  background-color: transparent;
+  border: none;
+  outline: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: #0F172A;
+  padding: 4px 6px;
+  resize: none;
+}
+input.cell-input:focus, textarea.cell-input:focus {
+  box-shadow: inset 0 0 0 2px #1B6B7A;
+  border-radius: 2px;
+  background-color: white;
+}
+
+@keyframes warn-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(217,119,6,0.4); }
+  50% { box-shadow: inset 0 0 0 2px rgba(217,119,6,0.7); }
+}

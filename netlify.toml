@@ -1,0 +1,17 @@
+# Netlify build configuration
+# This file tells Netlify exactly how to build and publish the site,
+# removing any guesswork from auto-detection.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Single-page app fallback: every route serves index.html so React Router
+# (or future client-side routing) works correctly.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
