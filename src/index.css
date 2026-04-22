@@ -2,8 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================
+   GA Endoscopy Scheduling — Dark theme palette
+   ---------------------------------------------------------
+   Inspired by the Gastroenterology Associates brand:
+   - Deep navy background (#0B1220)
+   - Bright sky/cyan accent (#38BDF8) for interactive elements
+   - GA brand blue (#2970B8) as secondary accent
+   - Slate grays for cards and borders
+========================================================= */
+
+:root {
+  --ga-bg: #0B1220;
+  --ga-bg-elev: #111B2E;
+  --ga-card: #162238;
+  --ga-card-soft: #1C2A43;
+  --ga-border: #23314C;
+  --ga-border-soft: #1A2538;
+  --ga-text: #E5EDF8;
+  --ga-text-dim: #94A3B8;
+  --ga-text-muted: #64748B;
+  --ga-accent: #38BDF8;        /* bright cyan - primary UI accent */
+  --ga-accent-hover: #0EA5E9;
+  --ga-brand-blue: #2970B8;    /* matches logo */
+  --ga-brand-gray: #A8A8A8;    /* matches logo */
+}
+
 @layer base {
   html, body {
+    background-color: var(--ga-bg);
+    color: var(--ga-text);
     font-family: 'DM Sans', system-ui, sans-serif;
   }
 }
@@ -13,27 +41,50 @@
   .font-body { font-family: 'DM Sans', system-ui, sans-serif; }
   .font-mono-custom { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-  .paper-bg {
-    background-color: #FAF7F2;
+  /* App shell: deep navy with subtle radial glow suggesting the logo's blue tone */
+  .ga-bg {
+    background-color: var(--ga-bg);
     background-image:
-      radial-gradient(at 0% 0%, rgba(27,107,122,0.04) 0%, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(199,81,70,0.03) 0%, transparent 50%);
+      radial-gradient(at 15% 0%, rgba(56, 189, 248, 0.06) 0%, transparent 45%),
+      radial-gradient(at 85% 100%, rgba(41, 112, 184, 0.05) 0%, transparent 45%);
+    background-attachment: fixed;
   }
 
-  .cell-hover:hover { background-color: rgba(27,107,122,0.06); }
+  .ga-card {
+    background-color: var(--ga-card);
+    border: 1px solid var(--ga-border);
+  }
+
+  .ga-card-soft {
+    background-color: var(--ga-card-soft);
+  }
+
+  .ga-border { border-color: var(--ga-border); }
+  .ga-border-soft { border-color: var(--ga-border-soft); }
+
+  .text-ga { color: var(--ga-text); }
+  .text-ga-dim { color: var(--ga-text-dim); }
+  .text-ga-muted { color: var(--ga-text-muted); }
+
+  .bg-ga-accent { background-color: var(--ga-accent); }
+  .text-ga-accent { color: var(--ga-accent); }
+  .border-ga-accent { border-color: var(--ga-accent); }
+
+  .cell-hover:hover { background-color: rgba(56, 189, 248, 0.08); }
 
   .section-header {
     font-family: 'Fraunces', serif;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
   }
 
   .assignment-cell {
     transition: background-color 120ms ease, box-shadow 120ms ease;
   }
   .assignment-cell.empty {
-    background-color: rgba(15,23,42,0.02);
+    background-color: rgba(255, 255, 255, 0.015);
   }
 
+  /* Active tab underline accent */
   .tab-underline::after {
     content: '';
     position: absolute;
@@ -41,12 +92,28 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: #1B6B7A;
+    background: var(--ga-accent);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+  }
+
+  /* Vertical accent bar for section headings (matches reference screenshot) */
+  .section-bar::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 1.1em;
+    background: var(--ga-accent);
+    border-radius: 2px;
+    margin-right: 0.6rem;
+    vertical-align: middle;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
   }
 
   .warn-pulse { animation: warn-pulse 2s ease-in-out infinite; }
+  .accent-glow { box-shadow: 0 0 20px rgba(56, 189, 248, 0.15); }
 }
 
+/* Native form element styling for the dark theme */
 select.cell-select {
   appearance: none;
   -webkit-appearance: none;
@@ -57,12 +124,16 @@ select.cell-select {
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
   font-size: 13px;
-  color: #0F172A;
+  color: var(--ga-text);
   padding: 4px 6px;
 }
 select.cell-select:focus {
-  box-shadow: inset 0 0 0 2px #1B6B7A;
+  box-shadow: inset 0 0 0 2px var(--ga-accent);
   border-radius: 2px;
+}
+select.cell-select option {
+  background-color: var(--ga-card);
+  color: var(--ga-text);
 }
 
 input.cell-input, textarea.cell-input {
@@ -72,17 +143,26 @@ input.cell-input, textarea.cell-input {
   outline: none;
   font-family: 'DM Sans', sans-serif;
   font-size: 13px;
-  color: #0F172A;
+  color: var(--ga-text);
   padding: 4px 6px;
   resize: none;
 }
 input.cell-input:focus, textarea.cell-input:focus {
-  box-shadow: inset 0 0 0 2px #1B6B7A;
+  box-shadow: inset 0 0 0 2px var(--ga-accent);
   border-radius: 2px;
-  background-color: white;
+  background-color: rgba(56, 189, 248, 0.04);
+}
+input.cell-input::placeholder, textarea.cell-input::placeholder {
+  color: var(--ga-text-muted);
 }
 
 @keyframes warn-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 1px rgba(217,119,6,0.4); }
-  50% { box-shadow: inset 0 0 0 2px rgba(217,119,6,0.7); }
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.5); }
+  50% { box-shadow: inset 0 0 0 2px rgba(251, 191, 36, 0.8); }
 }
+
+/* Webkit scrollbar styling for dark theme */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ga-bg); }
+::-webkit-scrollbar-thumb { background: var(--ga-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ga-card-soft); }

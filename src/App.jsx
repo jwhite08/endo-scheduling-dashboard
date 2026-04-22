@@ -898,25 +898,28 @@ export default function App() {
   const dayDates = getDayDates(mondayObj);
 
   return (
-    <div className="paper-bg min-h-screen font-body text-slate-900">
+    <div className="ga-bg min-h-screen font-body text-ga">
       {/* ============ Header ============ */}
-      <header className="border-b border-slate-200 bg-white/70 backdrop-blur-sm">
+      <header className="border-b ga-border bg-[#0F1A2E]/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-sm bg-slate-900 flex items-center justify-center">
-              <span className="font-display text-white text-lg font-semibold italic">E</span>
-            </div>
+            <img
+              src="/ga-logo.png"
+              alt="Gastroenterology Associates"
+              className="h-10 w-auto"
+              draggable="false"
+            />
             <div>
-              <h1 className="font-display text-xl font-semibold tracking-tight leading-none">
-                Endoscopy Scheduling
+              <h1 className="font-display text-xl font-semibold tracking-tight leading-none text-ga">
+                Gastroenterology Associates
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5 tracking-wide uppercase">
-                Supervisor Dashboard
+              <p className="text-[11px] text-ga-accent mt-1 tracking-[0.15em] uppercase font-medium">
+                Endoscopy Scheduling
               </p>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 bg-slate-100/60 rounded-sm p-1">
+          <nav className="flex items-center gap-1 ga-card-soft rounded-md p-1 border ga-border-soft">
             {[
               { id: "schedule", label: "Schedule", Icon: Calendar },
               { id: "staff", label: "Staff", Icon: Users },
@@ -925,10 +928,10 @@ export default function App() {
               <button
                 key={id}
                 onClick={() => setView(id)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-sm transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded transition-colors ${
                   view === id
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
+                    ? "bg-[#23314C] text-ga-accent shadow-inner"
+                    : "text-ga-dim hover:text-ga"
                 }`}
               >
                 <Icon size={15} strokeWidth={1.8} />
@@ -941,14 +944,14 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               onClick={triggerImport}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-sm hover:bg-slate-100"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-ga-dim hover:text-ga-accent rounded-md hover:bg-[#1C2A43] transition-colors"
               title="Import all data from a JSON backup"
             >
               <Upload size={13} strokeWidth={1.8} /> Import
             </button>
             <button
               onClick={exportAllData}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-sm hover:bg-slate-100"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-ga-dim hover:text-ga-accent rounded-md hover:bg-[#1C2A43] transition-colors"
               title="Export all data as a shareable JSON file"
             >
               <FileJson size={13} strokeWidth={1.8} /> Backup
@@ -967,14 +970,14 @@ export default function App() {
       {/* ============ Toast ============ */}
       {toast && (
         <div
-          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-sm shadow-lg flex items-center gap-2 text-sm border ${
+          className={`fixed top-24 right-6 z-50 px-4 py-3 rounded-md shadow-2xl flex items-center gap-2 text-sm border backdrop-blur-md ${
             toast.kind === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+              ? "bg-emerald-950/90 border-emerald-700/50 text-emerald-200"
               : toast.kind === "warn"
-                ? "bg-amber-50 border-amber-200 text-amber-900"
+                ? "bg-amber-950/90 border-amber-700/50 text-amber-200"
                 : toast.kind === "error"
-                  ? "bg-rose-50 border-rose-200 text-rose-900"
-                  : "bg-slate-900 border-slate-800 text-white"
+                  ? "bg-rose-950/90 border-rose-700/50 text-rose-200"
+                  : "bg-[#162238] border-[#23314C] text-ga"
           }`}
         >
           {toast.kind === "success" && <CheckCircle2 size={16} />}
@@ -1013,7 +1016,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="max-w-[1400px] mx-auto px-6 py-6 text-xs text-slate-400 font-mono">
+      <footer className="max-w-[1400px] mx-auto px-6 py-6 text-xs text-ga-muted font-mono">
         Saved locally in browser · Export to Excel for distribution
       </footer>
     </div>
@@ -1100,7 +1103,7 @@ function ScheduleView({
     <div>
       {/* Location Tabs */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex items-end gap-0 border-b border-slate-200">
+        <div className="flex items-end gap-0 border-b ga-border">
           {LOCATIONS.map((loc) => {
             const active = currentLocation === loc;
             return (
@@ -1109,14 +1112,14 @@ function ScheduleView({
                 onClick={() => setCurrentLocation(loc)}
                 className={`relative px-5 py-3 text-sm font-medium transition-colors ${
                   active
-                    ? "text-slate-900 tab-underline"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "text-ga tab-underline"
+                    : "text-ga-dim hover:text-ga"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <Building2 size={14} strokeWidth={1.8} />
                   <span>{loc}</span>
-                  <span className="font-mono text-[10px] text-slate-400">
+                  <span className="font-mono text-[10px] text-ga-muted">
                     {LOC_META[loc].code}
                   </span>
                 </div>
@@ -1129,22 +1132,22 @@ function ScheduleView({
         <div className="flex items-center gap-2">
           <button
             onClick={() => shiftWeek(-1)}
-            className="p-2 rounded-sm hover:bg-slate-100 text-slate-600"
+            className="p-2 rounded-md hover:bg-[#1C2A43] hover:text-ga-accent text-ga-dim transition-colors"
             aria-label="Previous week"
           >
             <ChevronLeft size={16} />
           </button>
-          <div className="px-3 py-2 bg-white border border-slate-200 rounded-sm min-w-[180px] text-center">
-            <div className="font-display text-sm font-semibold">
+          <div className="px-4 py-2 bg-[#162238] border ga-border rounded-md min-w-[200px] text-center">
+            <div className="font-display text-sm font-semibold text-ga">
               {formatWeekRange(new Date(currentWeek))}
             </div>
-            <div className="text-[10px] font-mono text-slate-400 tracking-wide uppercase mt-0.5">
+            <div className="text-[10px] font-mono-custom text-ga-accent tracking-[0.15em] uppercase mt-0.5">
               Week of {new Date(currentWeek).toLocaleDateString("en-US", { month: "long", day: "numeric" })}
             </div>
           </div>
           <button
             onClick={() => shiftWeek(1)}
-            className="p-2 rounded-sm hover:bg-slate-100 text-slate-600"
+            className="p-2 rounded-md hover:bg-[#1C2A43] hover:text-ga-accent text-ga-dim transition-colors"
             aria-label="Next week"
           >
             <ChevronRight size={16} />
@@ -1169,17 +1172,17 @@ function ScheduleView({
 
       {/* Validation Panel */}
       {validation.length > 0 && (
-        <div className="mb-4 p-4 bg-amber-50/60 border border-amber-200 rounded-sm">
+        <div className="mb-4 p-4 bg-amber-950/30 border border-amber-700/50 rounded-sm">
           <div className="flex items-start gap-2">
-            <AlertTriangle size={16} className="text-amber-700 mt-0.5 flex-shrink-0" />
+            <AlertTriangle size={16} className="text-amber-300 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <div className="text-sm font-semibold text-amber-900 mb-1">
+              <div className="text-sm font-semibold text-amber-200 mb-1">
                 {validation.length} warning{validation.length !== 1 ? "s" : ""}
-                <span className="font-normal text-amber-700 ml-2">
+                <span className="font-normal text-amber-300 ml-2">
                   (rotations are guidelines — overrides are OK)
                 </span>
               </div>
-              <ul className="text-xs text-amber-800 space-y-0.5 max-h-32 overflow-auto">
+              <ul className="text-xs text-amber-100 space-y-0.5 max-h-32 overflow-auto">
                 {validation.slice(0, 10).map((w, i) => (
                   <li key={i}>• {w.message}</li>
                 ))}
@@ -1193,19 +1196,19 @@ function ScheduleView({
       )}
 
       {/* Schedule Grid */}
-      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
+      <div className="ga-card border ga-border rounded-sm overflow-hidden">
         {/* Day Header */}
-        <div className="grid grid-cols-[140px_repeat(5,1fr)] border-b border-slate-200 bg-slate-50/60">
-          <div className="px-3 py-3 text-[11px] font-mono text-slate-400 tracking-wider uppercase">
+        <div className="grid grid-cols-[140px_repeat(5,1fr)] border-b ga-border bg-[#1C2A43]/40">
+          <div className="px-3 py-3 text-[11px] font-mono text-ga-muted tracking-wider uppercase">
             Section / Slot
           </div>
           {DAYS.map((d, i) => (
             <div
               key={d}
-              className="px-3 py-3 border-l border-slate-200"
+              className="px-3 py-3 border-l ga-border"
             >
-              <div className="font-display text-sm font-semibold text-slate-900">{d}</div>
-              <div className="text-[10px] font-mono text-slate-400 tracking-wide">
+              <div className="font-display text-sm font-semibold text-ga">{d}</div>
+              <div className="text-[10px] font-mono text-ga-muted tracking-wide">
                 {formatDateShort(dayDates[i])}
               </div>
             </div>
@@ -1216,11 +1219,11 @@ function ScheduleView({
         {config.sections.map((section) => (
           <div key={section.id}>
             {/* Section header row */}
-            <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-slate-900/90 text-white">
-              <div className="px-3 py-2 section-header text-sm font-semibold uppercase tracking-wider col-span-6 flex items-center justify-between">
+            <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-gradient-to-r from-[#162238] via-[#1C2A43] to-[#162238] border-y ga-border">
+              <div className="px-4 py-2.5 section-header section-bar text-sm font-semibold uppercase tracking-[0.1em] col-span-6 flex items-center justify-between text-ga">
                 <span>{section.label}</span>
-                <div className="flex items-center gap-2 text-[10px] font-mono tracking-wide text-slate-300 normal-case">
-                  {section.rotating && <span>rotating</span>}
+                <div className="flex items-center gap-2 text-[10px] font-mono-custom tracking-wide text-ga-muted normal-case">
+                  {section.rotating && <span className="text-ga-accent">rotating</span>}
                   <span>· {section.role === "RN_OR_TECH" ? "RN / Tech" : section.role}</span>
                 </div>
               </div>
@@ -1235,13 +1238,13 @@ function ScheduleView({
               if (slot.roomHeader) {
                 return (
                   <React.Fragment key={slot.id}>
-                    <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-slate-100/50 border-t border-slate-200">
-                      <div className="px-3 py-1.5 text-xs font-medium text-slate-600 italic col-span-6">
+                    <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-[#1C2A43]/50 border-t ga-border">
+                      <div className="px-3 py-1.5 text-xs font-medium text-ga-dim italic col-span-6">
                         {slot.label}
                       </div>
                     </div>
-                    <div className="grid grid-cols-[140px_repeat(5,1fr)] border-t border-slate-100">
-                      <div className="px-3 py-2 text-xs text-slate-400 font-mono"></div>
+                    <div className="grid grid-cols-[140px_repeat(5,1fr)] border-t ga-border-soft">
+                      <div className="px-3 py-2 text-xs text-ga-muted font-mono"></div>
                       {DAY_KEYS.map((_, dayIdx) => (
                         <Cell
                           key={dayIdx}
@@ -1259,9 +1262,9 @@ function ScheduleView({
               return (
                 <div
                   key={slot.id}
-                  className="grid grid-cols-[140px_repeat(5,1fr)] border-t border-slate-100"
+                  className="grid grid-cols-[140px_repeat(5,1fr)] border-t ga-border-soft"
                 >
-                  <div className="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-50/40 flex items-center">
+                  <div className="px-3 py-2 text-xs text-ga-dim font-mono bg-[#1A2538]/40 flex items-center">
                     {slot.label || "\u00A0"}
                   </div>
                   {DAY_KEYS.map((_, dayIdx) => (
@@ -1280,19 +1283,19 @@ function ScheduleView({
         ))}
 
         {/* Training / Time Off */}
-        <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-slate-900/90 text-white">
-          <div className="px-3 py-2 section-header text-sm font-semibold uppercase tracking-wider col-span-6">
+        <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-gradient-to-r from-[#162238] via-[#1C2A43] to-[#162238] border-y ga-border">
+          <div className="px-4 py-2.5 section-header section-bar text-sm font-semibold uppercase tracking-[0.1em] col-span-6 text-ga">
             Training / Time Off / Etc.
           </div>
         </div>
-        <div className="grid grid-cols-[140px_repeat(5,1fr)] border-t border-slate-100">
-          <div className="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-50/40">
+        <div className="grid grid-cols-[140px_repeat(5,1fr)] border-t ga-border-soft">
+          <div className="px-3 py-2 text-xs text-ga-dim font-mono bg-[#1A2538]/40">
             Notes
           </div>
           {DAY_KEYS.map((_, dayIdx) => (
             <div
               key={dayIdx}
-              className="border-l border-slate-100 min-h-[90px] p-1"
+              className="border-l ga-border-soft min-h-[90px] p-1"
             >
               <textarea
                 className="cell-input"
@@ -1306,8 +1309,8 @@ function ScheduleView({
         </div>
 
         {/* Doctors Scheduled */}
-        <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-slate-900/90 text-white">
-          <div className="px-3 py-2 section-header text-sm font-semibold uppercase tracking-wider col-span-6">
+        <div className="grid grid-cols-[140px_repeat(5,1fr)] bg-gradient-to-r from-[#162238] via-[#1C2A43] to-[#162238] border-y ga-border">
+          <div className="px-4 py-2.5 section-header section-bar text-sm font-semibold uppercase tracking-[0.1em] col-span-6 text-ga">
             Doctors Scheduled
           </div>
         </div>
@@ -1317,13 +1320,13 @@ function ScheduleView({
           return (
             <div
               key={roomKey}
-              className="grid grid-cols-[140px_repeat(5,1fr)] border-t border-slate-100"
+              className="grid grid-cols-[140px_repeat(5,1fr)] border-t ga-border-soft"
             >
-              <div className="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-50/40 flex items-center">
+              <div className="px-3 py-2 text-xs text-ga-dim font-mono bg-[#1A2538]/40 flex items-center">
                 Rm {i + 1}
               </div>
               {DAY_KEYS.map((_, dayIdx) => (
-                <div key={dayIdx} className="border-l border-slate-100 assignment-cell cell-hover">
+                <div key={dayIdx} className="border-l ga-border-soft assignment-cell cell-hover">
                   <input
                     className="cell-input"
                     style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, textTransform: "uppercase" }}
@@ -1339,7 +1342,7 @@ function ScheduleView({
       </div>
 
       {/* Summary bar */}
-      <div className="mt-4 flex items-center gap-6 text-xs text-slate-500 font-mono">
+      <div className="mt-4 flex items-center gap-6 text-xs text-ga-dim font-mono">
         <span>{config.rooms} procedure room{config.rooms !== 1 ? "s" : ""}</span>
         <span>·</span>
         <span>{staff.filter((s) => s.eligible.includes(currentLocation)).length} eligible staff</span>
@@ -1354,7 +1357,7 @@ function Cell({ value, options, onChange, warnings }) {
   const hasWarn = warnings && warnings.length > 0;
   return (
     <div
-      className={`border-l border-slate-100 assignment-cell cell-hover relative ${
+      className={`border-l ga-border-soft assignment-cell cell-hover relative ${
         !value ? "empty" : ""
       } ${hasWarn ? "warn-pulse" : ""}`}
       title={hasWarn ? warnings.join("\n") : undefined}
@@ -1379,16 +1382,18 @@ function Cell({ value, options, onChange, warnings }) {
 }
 
 function ActionButton({ icon: Icon, label, onClick, solid, accent, danger }) {
-  const base = "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-sm transition-colors";
+  const base = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-md transition-all";
   let cls = "";
   if (solid) {
-    cls = "bg-slate-900 text-white hover:bg-slate-800";
+    // Primary action (Export): bright accent with subtle glow
+    cls = "bg-ga-accent text-[#0B1220] hover:bg-[#0EA5E9] font-semibold shadow-[0_0_20px_rgba(56,189,248,0.25)] hover:shadow-[0_0_28px_rgba(56,189,248,0.45)]";
   } else if (accent) {
-    cls = "bg-teal-700 text-white hover:bg-teal-800";
+    // Auto-fill: slightly different emphasis using brand blue
+    cls = "bg-[#2970B8] text-white hover:bg-[#3B82C9] shadow-[0_0_16px_rgba(41,112,184,0.25)]";
   } else if (danger) {
-    cls = "text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200";
+    cls = "text-rose-300 hover:bg-rose-950/40 border border-transparent hover:border-rose-800/50";
   } else {
-    cls = "bg-white text-slate-700 hover:bg-slate-50 border border-slate-200";
+    cls = "bg-[#162238] text-ga hover:bg-[#1C2A43] border ga-border hover:border-[#2A3A58]";
   }
   return (
     <button onClick={onClick} className={`${base} ${cls}`}>
@@ -1456,21 +1461,21 @@ function StaffView({ staff, setStaff }) {
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight">Staff Roster</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-ga-dim mt-0.5">
             {staff.length} team members · configure primary and eligible locations
           </p>
         </div>
         <button
           onClick={addStaff}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-sm hover:bg-slate-800"
+          className="flex items-center gap-2 px-4 py-2 bg-ga-accent text-[#0B1220] text-sm font-semibold rounded-md hover:bg-[#0EA5E9] shadow-[0_0_20px_rgba(56,189,248,0.25)] transition-all"
         >
-          <Plus size={14} /> Add Staff
+          <Plus size={14} strokeWidth={2.4} /> Add Staff
         </button>
       </div>
 
       {/* Filters */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="flex items-center bg-white border border-slate-200 rounded-sm p-1">
+        <div className="flex items-center ga-card border ga-border rounded-sm p-1">
           {[
             { id: "all", label: "All" },
             { id: ROLES.TECH, label: "Techs" },
@@ -1481,16 +1486,16 @@ function StaffView({ staff, setStaff }) {
               key={f.id}
               onClick={() => setFilter(f.id)}
               className={`px-3 py-1.5 text-xs font-medium rounded-sm ${
-                filter === f.id ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:text-slate-800"
+                filter === f.id ? "bg-[#1C2A43] text-ga" : "text-ga-dim hover:text-ga"
               }`}
             >
               {f.label}
-              <span className="ml-1.5 text-slate-400 font-mono">{counts[f.id] || 0}</span>
+              <span className="ml-1.5 text-ga-muted font-mono">{counts[f.id] || 0}</span>
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-sm px-3 py-1.5 flex-1 max-w-sm">
-          <Search size={14} className="text-slate-400" />
+        <div className="flex items-center gap-2 ga-card border ga-border rounded-sm px-3 py-1.5 flex-1 max-w-sm">
+          <Search size={14} className="text-ga-muted" />
           <input
             type="text"
             value={search}
@@ -1502,8 +1507,8 @@ function StaffView({ staff, setStaff }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
-        <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] bg-slate-50/60 border-b border-slate-200 text-[11px] font-mono text-slate-500 uppercase tracking-wider">
+      <div className="ga-card border ga-border rounded-sm overflow-hidden">
+        <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] bg-[#1C2A43]/40 border-b ga-border text-[11px] font-mono text-ga-dim uppercase tracking-wider">
           <div className="px-3 py-2">Display Name</div>
           <div className="px-3 py-2">Full Name</div>
           <div className="px-3 py-2">Role</div>
@@ -1522,7 +1527,7 @@ function StaffView({ staff, setStaff }) {
           />
         ))}
         {filtered.length === 0 && (
-          <div className="p-8 text-center text-sm text-slate-400">
+          <div className="p-8 text-center text-sm text-ga-muted">
             No staff match this filter
           </div>
         )}
@@ -1540,11 +1545,11 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
   };
 
   return (
-    <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] border-t border-slate-100 hover:bg-slate-50/40 text-sm items-center">
+    <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] border-t ga-border-soft hover:bg-[#1A2538]/40 text-sm items-center">
       <div className="px-3 py-2">
         {editing ? (
           <input
-            className="cell-input border border-slate-200 rounded-sm"
+            className="cell-input border ga-border rounded-sm"
             value={s.display}
             onChange={(e) => onUpdate({ display: e.target.value })}
           />
@@ -1552,10 +1557,10 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
           <span className="font-medium">{s.display}</span>
         )}
       </div>
-      <div className="px-3 py-2 text-slate-600">
+      <div className="px-3 py-2 text-ga-dim">
         {editing ? (
           <input
-            className="cell-input border border-slate-200 rounded-sm"
+            className="cell-input border ga-border rounded-sm"
             value={s.fullName}
             onChange={(e) => onUpdate({ fullName: e.target.value })}
           />
@@ -1567,7 +1572,7 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
         <select
           value={s.role}
           onChange={(e) => onUpdate({ role: e.target.value })}
-          className="text-xs font-mono bg-slate-100 px-2 py-1 rounded-sm border-none outline-none"
+          className="text-xs font-mono-custom bg-[#1C2A43] text-ga-accent px-2 py-1 rounded border-none outline-none cursor-pointer"
         >
           <option value={ROLES.TECH}>Tech</option>
           <option value={ROLES.RN}>RN</option>
@@ -1598,10 +1603,10 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
             <button
               key={l}
               onClick={() => toggleEligible(l)}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded-sm border transition-colors ${
+              className={`px-2 py-0.5 text-[11px] font-semibold rounded border transition-colors ${
                 on
-                  ? "bg-teal-700 text-white border-teal-700"
-                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"
+                  ? "bg-ga-accent text-[#0B1220] border-ga-accent"
+                  : "bg-[#162238] text-ga-dim ga-border hover:border-ga-accent hover:text-ga"
               }`}
               title={on ? `Eligible at ${l}` : `Not eligible at ${l}`}
             >
@@ -1613,13 +1618,13 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
       <div className="px-3 py-2 flex items-center gap-1">
         <button
           onClick={() => setEditing(editing ? null : s.id)}
-          className="p-1.5 text-xs text-slate-500 hover:text-slate-900"
+          className="p-1.5 text-xs text-ga-dim hover:text-ga"
         >
           {editing ? <CheckCircle2 size={14} /> : <Settings size={14} />}
         </button>
         <button
           onClick={onDelete}
-          className="p-1.5 text-xs text-rose-500 hover:text-rose-700"
+          className="p-1.5 text-xs text-rose-400 hover:text-rose-300"
         >
           <Trash2 size={14} />
         </button>
@@ -1686,7 +1691,7 @@ function RulesView({ rules, setRules, staff }) {
     <div>
       <div className="mb-5">
         <h2 className="font-display text-2xl font-semibold tracking-tight">Scheduling Rules</h2>
-        <p className="text-sm text-slate-500 mt-0.5">
+        <p className="text-sm text-ga-dim mt-0.5">
           Room owners and rotation orders — applied when you click "Auto-fill Rotations"
         </p>
       </div>
@@ -1696,10 +1701,10 @@ function RulesView({ rules, setRules, staff }) {
           <button
             key={l}
             onClick={() => setLoc(l)}
-            className={`px-4 py-2 text-sm font-medium rounded-sm border transition-colors ${
+            className={`px-4 py-2 text-sm font-medium rounded-md border transition-all ${
               loc === l
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                ? "bg-ga-accent text-[#0B1220] border-ga-accent font-semibold shadow-[0_0_16px_rgba(56,189,248,0.3)]"
+                : "bg-[#162238] text-ga-dim ga-border hover:border-ga-accent hover:text-ga"
             }`}
           >
             {l}
@@ -1709,12 +1714,12 @@ function RulesView({ rules, setRules, staff }) {
 
       <div className="grid md:grid-cols-2 gap-5">
         {/* Room Owners */}
-        <div className="bg-white border border-slate-200 rounded-sm p-5">
+        <div className="ga-card border ga-border rounded-sm p-5">
           <div className="flex items-center gap-2 mb-3">
-            <Building2 size={16} className="text-teal-700" />
+            <Building2 size={16} className="text-ga-accent" />
             <h3 className="font-display text-lg font-semibold">Room Owners</h3>
           </div>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-ga-dim mb-4">
             Default RN or Tech for each procedure room — used as a hint when building the week
           </p>
           <div className="space-y-2">
@@ -1723,11 +1728,11 @@ function RulesView({ rules, setRules, staff }) {
               const ownerId = rules.roomOwners[loc]?.[key] || "";
               return (
                 <div key={key} className="flex items-center gap-2">
-                  <span className="w-24 text-xs font-mono text-slate-500">Room {i + 1}</span>
+                  <span className="w-24 text-xs font-mono text-ga-dim">Room {i + 1}</span>
                   <select
                     value={ownerId}
                     onChange={(e) => updateRoomOwner(key, e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-sm outline-none"
+                    className="flex-1 px-3 py-1.5 text-sm bg-[#1C2A43]/60 border ga-border rounded-sm outline-none"
                   >
                     <option value="">— No default —</option>
                     {[...rnsForLoc, ...techsForLoc]
@@ -1787,12 +1792,12 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
   const available = candidates.filter((c) => !order.includes(c.id));
 
   return (
-    <div className="bg-white border border-slate-200 rounded-sm p-5">
+    <div className="ga-card border ga-border rounded-sm p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Zap size={16} className="text-teal-700" />
+        <Zap size={16} className="text-ga-accent" />
         <h3 className="font-display text-lg font-semibold">{label}</h3>
       </div>
-      <p className="text-xs text-slate-500 mb-3">
+      <p className="text-xs text-ga-dim mb-3">
         Monday's starting order. Each day advances: the last person rotates to the first slot.
       </p>
 
@@ -1802,29 +1807,29 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
           return (
             <li
               key={id}
-              className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-sm px-2 py-1.5"
+              className="flex items-center gap-2 bg-[#1C2A43]/60 border ga-border rounded-sm px-2 py-1.5"
             >
-              <span className="w-5 text-xs font-mono text-slate-400">{idx + 1}</span>
+              <span className="w-5 text-xs font-mono text-ga-muted">{idx + 1}</span>
               <span className="flex-1 text-sm font-medium">
-                {s ? s.display : <em className="text-rose-500">Unknown ({id})</em>}
+                {s ? s.display : <em className="text-rose-400">Unknown ({id})</em>}
               </span>
               <button
                 onClick={() => onMove(sectionKey, idx, -1)}
                 disabled={idx === 0}
-                className="p-1 text-slate-500 hover:text-slate-900 disabled:text-slate-300"
+                className="p-1 text-ga-dim hover:text-ga disabled:text-ga-muted"
               >
                 <MoveUp size={12} />
               </button>
               <button
                 onClick={() => onMove(sectionKey, idx, 1)}
                 disabled={idx === order.length - 1}
-                className="p-1 text-slate-500 hover:text-slate-900 disabled:text-slate-300"
+                className="p-1 text-ga-dim hover:text-ga disabled:text-ga-muted"
               >
                 <MoveDown size={12} />
               </button>
               <button
                 onClick={() => onRemove(sectionKey, idx)}
-                className="p-1 text-rose-500 hover:text-rose-700"
+                className="p-1 text-rose-400 hover:text-rose-300"
               >
                 <X size={12} />
               </button>
@@ -1832,7 +1837,7 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
           );
         })}
         {order.length === 0 && (
-          <li className="text-xs text-slate-400 italic py-2">No one in rotation yet</li>
+          <li className="text-xs text-ga-muted italic py-2">No one in rotation yet</li>
         )}
       </ol>
 
@@ -1841,7 +1846,7 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
           <select
             value={addChoice}
             onChange={(e) => setAddChoice(e.target.value)}
-            className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-sm outline-none"
+            className="flex-1 px-2 py-1.5 text-xs ga-card border ga-border rounded-sm outline-none"
           >
             <option value="">+ Add staff to rotation...</option>
             {available
@@ -1858,7 +1863,7 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
               setAddChoice("");
             }}
             disabled={!addChoice}
-            className="px-3 py-1.5 text-xs bg-slate-900 text-white rounded-sm disabled:bg-slate-300"
+            className="px-3 py-1.5 text-xs bg-ga-accent text-[#0B1220] font-semibold rounded-md hover:bg-[#0EA5E9] disabled:bg-[#23314C] disabled:text-ga-muted transition-colors"
           >
             Add
           </button>
