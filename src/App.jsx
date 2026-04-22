@@ -1140,7 +1140,7 @@ function ScheduleView({
             <ChevronLeft size={16} />
           </button>
           <div className="px-4 py-2 bg-[#162238] border ga-border rounded-md min-w-[200px] text-center">
-            <div className="font-display text-sm font-semibold text-ga">
+            <div className="font-body text-sm font-semibold text-ga">
               {formatWeekRange(new Date(currentWeek))}
             </div>
             <div className="text-[10px] font-mono-custom text-ga-accent tracking-[0.15em] uppercase mt-0.5">
