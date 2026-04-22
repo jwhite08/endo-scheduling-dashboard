@@ -166,3 +166,40 @@ input.cell-input::placeholder, textarea.cell-input::placeholder {
 ::-webkit-scrollbar-track { background: var(--ga-bg); }
 ::-webkit-scrollbar-thumb { background: var(--ga-border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ga-card-soft); }
+
+/* =========================================================
+   Logo glow — soft cyan halo behind the transparent logo
+   Uses layered drop-shadow filters (respects PNG transparency)
+   plus a pulsing radial-gradient backdrop behind the image.
+========================================================= */
+.logo-glow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+.logo-glow::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(56, 189, 248, 0.32) 0%,
+    rgba(41, 112, 184, 0.18) 40%,
+    transparent 70%
+  );
+  filter: blur(10px);
+  z-index: 0;
+  animation: logo-pulse 4s ease-in-out infinite;
+}
+.logo-glow img {
+  filter:
+    drop-shadow(0 0 6px rgba(56, 189, 248, 0.55))
+    drop-shadow(0 0 14px rgba(41, 112, 184, 0.35));
+}
+@keyframes logo-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}

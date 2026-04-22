@@ -903,12 +903,14 @@ export default function App() {
       <header className="border-b ga-border bg-[#0F1A2E]/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <img
-              src="/ga-logo.png"
-              alt="Gastroenterology Associates"
-              className="h-10 w-auto"
-              draggable="false"
-            />
+            <div className="logo-glow relative">
+              <img
+                src="/ga-logo.png"
+                alt="Gastroenterology Associates"
+                className="h-11 w-auto relative z-10"
+                draggable="false"
+              />
+            </div>
             <div>
               <h1 className="font-display text-xl font-semibold tracking-tight leading-none text-ga">
                 Gastroenterology Associates
