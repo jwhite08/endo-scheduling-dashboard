@@ -20,8 +20,28 @@ import {
   MoveDown,
   Upload,
   FileJson,
+  LogOut,
+  Loader2,
+  Cloud,
+  CloudOff,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import SignIn from "./SignIn.jsx";
+import {
+  isConfigured as supabaseConfigured,
+  loadAllStaff,
+  saveAllStaff,
+  loadAllRules,
+  saveAllRules,
+  loadAllSchedules,
+  saveOneSchedule,
+  subscribeStaff,
+  subscribeRules,
+  subscribeSchedules,
+  signOut as supabaseSignOut,
+  getCurrentSession,
+  onAuthChange,
+} from "./supabase";
 
 /* Font loading is handled by index.html; global styles live in index.css */
 
@@ -306,20 +326,36 @@ const INITIAL_RULES = {
 /* ============================================================
    Date utilities
 ============================================================ */
+
+// Parse "YYYY-MM-DD" as a LOCAL-time date.
+// new Date("2026-05-04") parses as UTC midnight, which becomes the
+// previous evening in any westward time zone — that's what was causing
+// week labels to drift off by a day.
+function parseLocalDate(input) {
+  if (input instanceof Date) return new Date(input.getTime());
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, d] = input.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(input);
+}
+
 function getMonday(d) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(date.setDate(diff));
+  const date = parseLocalDate(d);
+  const day = date.getDay();          // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diff);
   monday.setHours(0, 0, 0, 0);
   return monday;
 }
 
 function weekKey(mondayDate) {
-  const y = mondayDate.getFullYear();
-  const m = String(mondayDate.getMonth() + 1).padStart(2, "0");
-  const d = String(mondayDate.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  const m = parseLocalDate(mondayDate);
+  const y = m.getFullYear();
+  const mo = String(m.getMonth() + 1).padStart(2, "0");
+  const d = String(m.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${d}`;
 }
 
 function formatDateShort(d) {
@@ -327,14 +363,16 @@ function formatDateShort(d) {
 }
 
 function formatWeekRange(mondayDate) {
-  const friday = new Date(mondayDate);
+  const m = parseLocalDate(mondayDate);
+  const friday = new Date(m);
   friday.setDate(friday.getDate() + 4);
-  return `${formatDateShort(mondayDate)} – ${formatDateShort(friday)}`;
+  return `${formatDateShort(m)} – ${formatDateShort(friday)}`;
 }
 
 function getDayDates(mondayDate) {
+  const m = parseLocalDate(mondayDate);
   return DAY_KEYS.map((_, i) => {
-    const d = new Date(mondayDate);
+    const d = new Date(m);
     d.setDate(d.getDate() + i);
     return d;
   });
@@ -506,33 +544,38 @@ function buildSeedSchedules() {
 }
 
 /* ============================================================
-   Storage helpers (localStorage with error handling)
+   Cloud persistence: debounced helpers
+   --------------------------------------------------------------
+   - Reads come from Supabase on initial load + realtime updates
+   - Writes are debounced by 600ms so rapid edits don't spam the API
 ============================================================ */
-async function storageGet(key, fallback) {
-  try {
-    if (typeof window === "undefined" || !window.localStorage) return fallback;
-    const raw = window.localStorage.getItem(key);
-    if (raw == null) return fallback;
-    return JSON.parse(raw);
-  } catch (e) {
-    return fallback;
-  }
-}
-async function storageSet(key, value) {
-  try {
-    if (typeof window === "undefined" || !window.localStorage) return;
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn("localStorage quota exceeded or unavailable:", e);
-  }
+
+function debounce(fn, wait) {
+  let t;
+  const debounced = (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+  debounced.cancel = () => t && clearTimeout(t);
+  debounced.flush = (...args) => {
+    if (t) clearTimeout(t);
+    fn(...args);
+  };
+  return debounced;
 }
 
 /* ============================================================
    Main App
 ============================================================ */
 export default function App() {
+  /* ---- Auth state ---- */
+  const [authReady, setAuthReady] = useState(false);
+  const [session, setSession] = useState(null);
+
+  /* ---- Application state ---- */
   const [view, setView] = useState("schedule"); // 'schedule' | 'staff' | 'rules'
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [staff, setStaff] = useState(INITIAL_STAFF);
   const [rules, setRules] = useState(INITIAL_RULES);
   const [schedules, setSchedules] = useState({});
@@ -542,33 +585,221 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState("Halton");
   const [toast, setToast] = useState(null);
 
-  // Initial load from persistent storage
+  /* ---- Cloud sync status: 'idle' | 'saving' | 'saved' | 'error' | 'remote' ---- */
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const lastLocalEditRef = useRef(0);
+
+  // Marks "we just saved" to suppress the realtime echo from triggering a refetch
+  const markLocalEdit = () => {
+    lastLocalEditRef.current = Date.now();
+  };
+  const isRecentLocalEdit = () => Date.now() - lastLocalEditRef.current < 1500;
+
+  /* ============================================================
+     1. Auth bootstrap
+  ============================================================ */
   useEffect(() => {
+    if (!supabaseConfigured) {
+      // Show config error rather than infinitely "Loading..."
+      setAuthReady(true);
+      return;
+    }
+    let unsub;
     (async () => {
-      const [s, r, sc] = await Promise.all([
-        storageGet("endo:staff", null),
-        storageGet("endo:rules", null),
-        storageGet("endo:schedules", null),
-      ]);
-      if (s) setStaff(s);
-      if (r) setRules(r);
-      if (sc) setSchedules(sc);
-      else setSchedules(buildSeedSchedules());
-      setLoaded(true);
+      try {
+        const sess = await getCurrentSession();
+        setSession(sess);
+      } catch (e) {
+        console.warn("Could not read existing session:", e);
+      }
+      unsub = onAuthChange((s) => setSession(s));
+      setAuthReady(true);
     })();
+    return () => unsub && unsub();
   }, []);
 
-  // Persist on change
-  useEffect(() => {
-    if (loaded) storageSet("endo:staff", staff);
-  }, [staff, loaded]);
-  useEffect(() => {
-    if (loaded) storageSet("endo:rules", rules);
-  }, [rules, loaded]);
-  useEffect(() => {
-    if (loaded) storageSet("endo:schedules", schedules);
-  }, [schedules, loaded]);
+  /* ============================================================
+     2. Initial cloud load (runs after sign-in)
+  ============================================================ */
+  const refreshAll = useCallback(async () => {
+    try {
+      const [s, r, sc] = await Promise.all([
+        loadAllStaff(),
+        loadAllRules(),
+        loadAllSchedules(),
+      ]);
 
+      // Staff: if cloud is empty, seed with INITIAL_STAFF and save
+      if (s.length === 0) {
+        await saveAllStaff(INITIAL_STAFF);
+        setStaff(INITIAL_STAFF);
+      } else {
+        setStaff(s);
+      }
+
+      // Rules: if cloud has nothing for any location, seed
+      const hasAnyRules =
+        Object.keys(r.roomOwners || {}).length > 0 ||
+        Object.keys(r.rotationOrders || {}).length > 0;
+      if (!hasAnyRules) {
+        await saveAllRules(INITIAL_RULES);
+        setRules(INITIAL_RULES);
+      } else {
+        // Merge cloud rules over the defaults so any missing location keys
+        // still have an empty entry to work with
+        setRules({
+          roomOwners: { ...INITIAL_RULES.roomOwners, ...r.roomOwners },
+          rotationOrders: { ...INITIAL_RULES.rotationOrders, ...r.rotationOrders },
+        });
+      }
+
+      // Schedules: if cloud is empty, seed the example week
+      if (Object.keys(sc).length === 0) {
+        const seed = buildSeedSchedules();
+        // Save each week+location to the cloud
+        for (const [week, byLoc] of Object.entries(seed)) {
+          for (const [loc, data] of Object.entries(byLoc)) {
+            await saveOneSchedule(week, loc, data);
+          }
+        }
+        setSchedules(seed);
+      } else {
+        setSchedules(sc);
+      }
+
+      setLoaded(true);
+      setLoadError(null);
+    } catch (e) {
+      console.error("Failed to load from Supabase:", e);
+      setLoadError(e.message || String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session || !supabaseConfigured) return;
+    setLoaded(false);
+    refreshAll();
+  }, [session, refreshAll]);
+
+  /* ============================================================
+     3. Realtime subscriptions
+  ============================================================ */
+  useEffect(() => {
+    if (!session || !loaded) return;
+    const unsubs = [];
+
+    unsubs.push(
+      subscribeStaff(async () => {
+        if (isRecentLocalEdit()) return;
+        try {
+          const s = await loadAllStaff();
+          setStaff(s);
+          setSyncStatus("remote");
+        } catch (e) {
+          console.warn(e);
+        }
+      })
+    );
+
+    unsubs.push(
+      subscribeRules(async () => {
+        if (isRecentLocalEdit()) return;
+        try {
+          const r = await loadAllRules();
+          setRules({
+            roomOwners: { ...INITIAL_RULES.roomOwners, ...r.roomOwners },
+            rotationOrders: { ...INITIAL_RULES.rotationOrders, ...r.rotationOrders },
+          });
+          setSyncStatus("remote");
+        } catch (e) {
+          console.warn(e);
+        }
+      })
+    );
+
+    unsubs.push(
+      subscribeSchedules(async (payload) => {
+        if (isRecentLocalEdit()) return;
+        // For schedules we can apply the patch directly without a full refetch
+        const row = payload?.new || payload?.old;
+        if (!row?.week || !row?.location) return;
+        if (payload.eventType === "DELETE") {
+          setSchedules((prev) => {
+            const next = { ...prev };
+            if (next[row.week]) {
+              const newWeek = { ...next[row.week] };
+              delete newWeek[row.location];
+              if (Object.keys(newWeek).length === 0) {
+                delete next[row.week];
+              } else {
+                next[row.week] = newWeek;
+              }
+            }
+            return next;
+          });
+        } else {
+          setSchedules((prev) => ({
+            ...prev,
+            [row.week]: { ...(prev[row.week] || {}), [row.location]: row.data },
+          }));
+        }
+        setSyncStatus("remote");
+      })
+    );
+
+    return () => unsubs.forEach((u) => u && u());
+  }, [session, loaded]);
+
+  /* ============================================================
+     4. Cloud writes (debounced)
+  ============================================================ */
+  const debouncedSaveStaff = useMemo(
+    () =>
+      debounce(async (s) => {
+        try {
+          setSyncStatus("saving");
+          await saveAllStaff(s);
+          setSyncStatus("saved");
+          setTimeout(() => setSyncStatus("idle"), 1500);
+        } catch (e) {
+          console.error("Save staff failed:", e);
+          setSyncStatus("error");
+        }
+      }, 600),
+    []
+  );
+
+  const debouncedSaveRules = useMemo(
+    () =>
+      debounce(async (r) => {
+        try {
+          setSyncStatus("saving");
+          await saveAllRules(r);
+          setSyncStatus("saved");
+          setTimeout(() => setSyncStatus("idle"), 1500);
+        } catch (e) {
+          console.error("Save rules failed:", e);
+          setSyncStatus("error");
+        }
+      }, 600),
+    []
+  );
+
+  useEffect(() => {
+    if (!loaded || !session) return;
+    markLocalEdit();
+    debouncedSaveStaff(staff);
+  }, [staff, loaded, session, debouncedSaveStaff]);
+
+  useEffect(() => {
+    if (!loaded || !session) return;
+    markLocalEdit();
+    debouncedSaveRules(rules);
+  }, [rules, loaded, session, debouncedSaveRules]);
+
+  /* ============================================================
+     5. UI helpers
+  ============================================================ */
   const showToast = useCallback((msg, kind = "info") => {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), 3200);
@@ -581,6 +812,29 @@ export default function App() {
     );
   }, [schedules, currentWeek, currentLocation]);
 
+  // Per-week-and-location debounced saver
+  const scheduleSavers = useRef(new Map());
+  const getScheduleSaver = (week, location) => {
+    const key = `${week}::${location}`;
+    if (!scheduleSavers.current.has(key)) {
+      scheduleSavers.current.set(
+        key,
+        debounce(async (data) => {
+          try {
+            setSyncStatus("saving");
+            await saveOneSchedule(week, location, data);
+            setSyncStatus("saved");
+            setTimeout(() => setSyncStatus("idle"), 1500);
+          } catch (e) {
+            console.error("Save schedule failed:", e);
+            setSyncStatus("error");
+          }
+        }, 600)
+      );
+    }
+    return scheduleSavers.current.get(key);
+  };
+
   const updateSchedule = useCallback(
     (updater) => {
       setSchedules((prev) => {
@@ -588,13 +842,18 @@ export default function App() {
         const locData =
           weekData[currentLocation] || emptyLocationSchedule(currentLocation);
         const next = updater(JSON.parse(JSON.stringify(locData)));
+        markLocalEdit();
+        // Fire the cloud save (debounced)
+        if (loaded && session) {
+          getScheduleSaver(currentWeek, currentLocation)(next);
+        }
         return {
           ...prev,
           [currentWeek]: { ...weekData, [currentLocation]: next },
         };
       });
     },
-    [currentWeek, currentLocation]
+    [currentWeek, currentLocation, loaded, session]
   );
 
   /* ---- Validation: compute warnings for the current week ---- */
@@ -683,7 +942,7 @@ export default function App() {
 
   /* ---- Actions ---- */
   const copyPreviousWeek = () => {
-    const prevMonday = new Date(currentWeek);
+    const prevMonday = parseLocalDate(currentWeek);
     prevMonday.setDate(prevMonday.getDate() - 7);
     const prevKey = weekKey(prevMonday);
     const prev = schedules[prevKey]?.[currentLocation];
@@ -799,7 +1058,7 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const parsed = JSON.parse(e.target.result);
         if (!parsed.staff || !parsed.rules || !parsed.schedules) {
@@ -807,17 +1066,33 @@ export default function App() {
         }
         if (
           !confirm(
-            `Import will replace all current staff, rules, and schedules. Continue?`
+            `Import will replace all current staff, rules, and schedules in the cloud. Continue?`
           )
         ) {
           event.target.value = "";
           return;
         }
+
+        // Push to cloud immediately so all signed-in users see it
+        setSyncStatus("saving");
+        markLocalEdit();
+
+        await saveAllStaff(parsed.staff);
+        await saveAllRules(parsed.rules);
+        for (const [week, byLoc] of Object.entries(parsed.schedules)) {
+          for (const [loc, data] of Object.entries(byLoc)) {
+            await saveOneSchedule(week, loc, data);
+          }
+        }
+
         setStaff(parsed.staff);
         setRules(parsed.rules);
         setSchedules(parsed.schedules);
-        showToast("Data imported successfully", "success");
+        setSyncStatus("saved");
+        setTimeout(() => setSyncStatus("idle"), 1500);
+        showToast("Data imported and synced to cloud", "success");
       } catch (err) {
+        setSyncStatus("error");
         showToast("Import failed: " + err.message, "error");
       }
       event.target.value = "";
@@ -828,7 +1103,7 @@ export default function App() {
   const exportToExcel = () => {
     try {
       const wb = XLSX.utils.book_new();
-      const monday = new Date(currentWeek);
+      const monday = parseLocalDate(currentWeek);
       LOCATIONS.forEach((loc) => {
         const sched = schedules[currentWeek]?.[loc] || emptyLocationSchedule(loc);
         const config = LOCATION_CONFIGS[loc];
@@ -889,13 +1164,77 @@ export default function App() {
 
   /* ---- Week navigation ---- */
   const shiftWeek = (n) => {
-    const d = new Date(currentWeek);
+    const d = parseLocalDate(currentWeek);
     d.setDate(d.getDate() + n * 7);
     setCurrentWeek(weekKey(d));
   };
 
-  const mondayObj = new Date(currentWeek);
+  const mondayObj = parseLocalDate(currentWeek);
   const dayDates = getDayDates(mondayObj);
+
+  /* ============================================================
+     Render gates: config error → auth check → loading → app
+  ============================================================ */
+  if (!supabaseConfigured) {
+    return (
+      <div className="ga-bg min-h-screen flex items-center justify-center px-6">
+        <div className="ga-card border ga-border rounded-lg p-8 max-w-lg">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={24} className="text-amber-300 flex-shrink-0 mt-1" />
+            <div>
+              <h2 className="font-display text-xl font-semibold text-ga mb-2">
+                Cloud sync not configured
+              </h2>
+              <p className="text-sm text-ga-dim leading-relaxed mb-4">
+                The dashboard couldn't find the Supabase environment variables it needs to
+                connect to the cloud database.
+              </p>
+              <p className="text-sm text-ga-dim leading-relaxed mb-2">
+                The deploy needs these two environment variables set in Netlify:
+              </p>
+              <ul className="text-xs font-mono-custom text-ga-accent space-y-1 mb-4 list-disc list-inside">
+                <li>VITE_SUPABASE_URL</li>
+                <li>VITE_SUPABASE_ANON_KEY</li>
+              </ul>
+              <p className="text-xs text-ga-muted">
+                See SUPABASE_SETUP.md in the project for full instructions.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="ga-bg min-h-screen flex items-center justify-center">
+        <Loader2 size={28} className="text-ga-accent animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <SignIn onSuccess={() => { /* auth state listener will update session */ }} />;
+  }
+
+  if (!loaded) {
+    return (
+      <div className="ga-bg min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 size={28} className="text-ga-accent animate-spin" />
+          <p className="text-xs text-ga-dim font-mono-custom uppercase tracking-[0.15em]">
+            {loadError ? "Connection failed" : "Loading schedules…"}
+          </p>
+          {loadError && (
+            <p className="text-xs text-rose-300 max-w-md text-center mt-2">
+              {loadError}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="ga-bg min-h-screen font-body text-ga">
@@ -942,8 +1281,10 @@ export default function App() {
             ))}
           </nav>
 
-          {/* JSON data port: share schedules between supervisors */}
+          {/* JSON data port + cloud status + sign-out */}
           <div className="flex items-center gap-2">
+            <SyncIndicator status={syncStatus} />
+
             <button
               onClick={triggerImport}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-ga-dim hover:text-ga-accent rounded-md hover:bg-[#1C2A43] transition-colors"
@@ -965,6 +1306,24 @@ export default function App() {
               onChange={handleImportFile}
               className="hidden"
             />
+
+            <div className="w-px h-6 bg-[#23314C] mx-1" />
+
+            <button
+              onClick={async () => {
+                try {
+                  await supabaseSignOut();
+                  setSession(null);
+                  setLoaded(false);
+                } catch (e) {
+                  showToast("Sign-out failed: " + e.message, "error");
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-ga-dim hover:text-rose-300 rounded-md hover:bg-rose-950/30 transition-colors"
+              title={session?.user?.email ? `Signed in as ${session.user.email}` : "Sign out"}
+            >
+              <LogOut size={13} strokeWidth={1.8} /> Sign out
+            </button>
           </div>
         </div>
       </header>
@@ -1018,9 +1377,53 @@ export default function App() {
         )}
       </main>
 
-      <footer className="max-w-[1400px] mx-auto px-6 py-6 text-xs text-ga-muted font-mono">
-        Saved locally in browser · Export to Excel for distribution
+      <footer className="max-w-[1400px] mx-auto px-6 py-6 text-xs text-ga-muted font-mono-custom flex items-center gap-2">
+        <Cloud size={12} />
+        <span>Synced to cloud · Signed in as {session?.user?.email}</span>
       </footer>
+    </div>
+  );
+}
+
+/* ============================================================
+   SyncIndicator: shows current cloud-sync state in the header
+============================================================ */
+function SyncIndicator({ status }) {
+  let icon, label, color;
+  switch (status) {
+    case "saving":
+      icon = <Loader2 size={12} className="animate-spin" />;
+      label = "Saving";
+      color = "text-ga-accent";
+      break;
+    case "saved":
+      icon = <CheckCircle2 size={12} />;
+      label = "Saved";
+      color = "text-emerald-300";
+      break;
+    case "remote":
+      icon = <Cloud size={12} />;
+      label = "Updated";
+      color = "text-sky-300";
+      break;
+    case "error":
+      icon = <CloudOff size={12} />;
+      label = "Sync failed";
+      color = "text-rose-300";
+      break;
+    case "idle":
+    default:
+      icon = <Cloud size={12} />;
+      label = "Synced";
+      color = "text-ga-muted";
+  }
+  return (
+    <div
+      className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono-custom uppercase tracking-wider ${color}`}
+      title={`Cloud sync status: ${label}`}
+    >
+      {icon}
+      <span>{label}</span>
     </div>
   );
 }
@@ -1140,11 +1543,11 @@ function ScheduleView({
             <ChevronLeft size={16} />
           </button>
           <div className="px-4 py-2 bg-[#162238] border ga-border rounded-md min-w-[200px] text-center">
-            <div className="font-body text-sm font-semibold text-ga">
-              {formatWeekRange(new Date(currentWeek))}
+            <div className="font-display text-sm font-semibold text-ga">
+              {formatWeekRange(parseLocalDate(currentWeek))}
             </div>
             <div className="text-[10px] font-mono-custom text-ga-accent tracking-[0.15em] uppercase mt-0.5">
-              Week of {new Date(currentWeek).toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+              Week of {parseLocalDate(currentWeek).toLocaleDateString("en-US", { month: "long", day: "numeric" })}
             </div>
           </div>
           <button
