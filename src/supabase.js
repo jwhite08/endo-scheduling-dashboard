@@ -144,6 +144,49 @@ export async function deleteSchedule(week, location) {
 }
 
 // =========================================================================
+//  Time-off (staff out-of-office periods)
+// =========================================================================
+
+function timeOffRowToObject(row) {
+  return {
+    id: row.id,
+    staffId: row.staff_id,
+    startDate: row.start_date,    // 'YYYY-MM-DD'
+    endDate: row.end_date,        // 'YYYY-MM-DD'
+    reason: row.reason || "",
+  };
+}
+
+export async function loadAllTimeOff() {
+  const { data, error } = await supabase
+    .from("time_off")
+    .select("*")
+    .order("start_date");
+  if (error) throw error;
+  return (data || []).map(timeOffRowToObject);
+}
+
+export async function addTimeOff(staffId, startDate, endDate, reason = "") {
+  const { data, error } = await supabase
+    .from("time_off")
+    .insert({
+      staff_id: staffId,
+      start_date: startDate,
+      end_date: endDate,
+      reason: reason || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return timeOffRowToObject(data);
+}
+
+export async function deleteTimeOff(id) {
+  const { error } = await supabase.from("time_off").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// =========================================================================
 //  Realtime subscriptions
 //  Each returns an unsubscribe function.
 // =========================================================================
@@ -166,6 +209,18 @@ export function subscribeRules(onChange) {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "rules" },
+      () => onChange()
+    )
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
+export function subscribeTimeOff(onChange) {
+  const channel = supabase
+    .channel("time-off-changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "time_off" },
       () => onChange()
     )
     .subscribe();

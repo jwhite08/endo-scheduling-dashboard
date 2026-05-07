@@ -24,6 +24,8 @@ import {
   Loader2,
   Cloud,
   CloudOff,
+  CalendarOff,
+  Layers,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import SignIn from "./SignIn.jsx";
@@ -35,9 +37,13 @@ import {
   saveAllRules,
   loadAllSchedules,
   saveOneSchedule,
+  loadAllTimeOff,
+  addTimeOff,
+  deleteTimeOff,
   subscribeStaff,
   subscribeRules,
   subscribeSchedules,
+  subscribeTimeOff,
   signOut as supabaseSignOut,
   getCurrentSession,
   onAuthChange,
@@ -378,6 +384,32 @@ function getDayDates(mondayDate) {
   });
 }
 
+// Returns 'YYYY-MM-DD' for a Date object using LOCAL time
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+// Returns true if `dateStr` (YYYY-MM-DD) falls within any of the given
+// time-off ranges for `staffId`.
+function isStaffOff(timeOffArr, staffId, dateStr) {
+  if (!staffId) return false;
+  for (const t of timeOffArr) {
+    if (t.staffId !== staffId) continue;
+    if (dateStr >= t.startDate && dateStr <= t.endDate) return true;
+  }
+  return false;
+}
+
+// Returns true if a staff member identified by display name is off on dateStr
+function isDisplayOff(timeOffArr, staffById, displayName, dateStr) {
+  const id = staffById[displayName]?.id;
+  if (!id) return false;
+  return isStaffOff(timeOffArr, id, dateStr);
+}
+
 /* ============================================================
    Empty schedule factory
 ============================================================ */
@@ -573,12 +605,13 @@ export default function App() {
   const [session, setSession] = useState(null);
 
   /* ---- Application state ---- */
-  const [view, setView] = useState("schedule"); // 'schedule' | 'staff' | 'rules'
+  const [view, setView] = useState("schedule"); // 'schedule' | 'staff' | 'rules' | 'allsites'
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [staff, setStaff] = useState(INITIAL_STAFF);
   const [rules, setRules] = useState(INITIAL_RULES);
   const [schedules, setSchedules] = useState({});
+  const [timeOff, setTimeOff] = useState([]);
   const [currentWeek, setCurrentWeek] = useState(() =>
     weekKey(getMonday(new Date(2026, 4, 4)))
   );
@@ -623,10 +656,11 @@ export default function App() {
   ============================================================ */
   const refreshAll = useCallback(async () => {
     try {
-      const [s, r, sc] = await Promise.all([
+      const [s, r, sc, t] = await Promise.all([
         loadAllStaff(),
         loadAllRules(),
         loadAllSchedules(),
+        loadAllTimeOff(),
       ]);
 
       // Staff: if cloud is empty, seed with INITIAL_STAFF and save
@@ -666,6 +700,9 @@ export default function App() {
       } else {
         setSchedules(sc);
       }
+
+      // Time-off: just load whatever's there (could be empty, that's fine)
+      setTimeOff(t);
 
       setLoaded(true);
       setLoadError(null);
@@ -744,6 +781,19 @@ export default function App() {
           }));
         }
         setSyncStatus("remote");
+      })
+    );
+
+    unsubs.push(
+      subscribeTimeOff(async () => {
+        if (isRecentLocalEdit()) return;
+        try {
+          const t = await loadAllTimeOff();
+          setTimeOff(t);
+          setSyncStatus("remote");
+        } catch (e) {
+          console.warn(e);
+        }
       })
     );
 
@@ -893,10 +943,17 @@ export default function App() {
       });
     });
 
-    // Current-location warnings: role mismatch, eligibility, duplicate within loc
+    // Current-location warnings: role mismatch, eligibility, duplicate within loc, time-off
     const config = LOCATION_CONFIGS[currentLocation];
     const byName = {};
     staff.forEach((s) => (byName[s.display] = s));
+    // Pre-compute the date string for each weekday in the current week
+    const monday = parseLocalDate(currentWeek);
+    const dayDateStrs = DAY_KEYS.map((_, i) => {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      return isoDate(d);
+    });
     config.sections.forEach((section) => {
       section.slots.forEach((slot) => {
         DAY_KEYS.forEach((_dk, dayIdx) => {
@@ -933,12 +990,21 @@ export default function App() {
               message: `${name} is ${s.role} but ${section.label} needs ${section.role} (${DAYS[dayIdx]})`,
             });
           }
+          // time-off check
+          if (isStaffOff(timeOff, s.id, dayDateStrs[dayIdx])) {
+            warns.push({
+              type: "time_off",
+              day: DAYS[dayIdx],
+              name,
+              message: `${name} is marked OFF on ${DAYS[dayIdx]} but scheduled in ${section.label}`,
+            });
+          }
         });
       });
     });
 
     return warns;
-  }, [schedules, currentWeek, currentLocation, staff, currentSchedule]);
+  }, [schedules, currentWeek, currentLocation, staff, currentSchedule, timeOff]);
 
   /* ---- Actions ---- */
   const copyPreviousWeek = () => {
@@ -955,6 +1021,18 @@ export default function App() {
   };
 
   const autoFillRotations = () => {
+    // Compute the dates for each weekday so we can check time-off
+    const monday = parseLocalDate(currentWeek);
+    const dayDateStrs = DAY_KEYS.map((_, i) => {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      return isoDate(d);
+    });
+    const staffById = Object.fromEntries(staff.map((s) => [s.id, s.display]));
+    const idByDisplay = Object.fromEntries(staff.map((s) => [s.display, s.id]));
+
+    let skippedAny = false;
+
     updateSchedule((sched) => {
       const config = LOCATION_CONFIGS[currentLocation];
       const rot = rules.rotationOrders[currentLocation] || {};
@@ -974,24 +1052,48 @@ export default function App() {
           if (section.id === "frontOffice") ruleOrder = rot.frontOffice || [];
           if (section.id === "float") ruleOrder = rot.float || [];
           if (section.id === "recovery") ruleOrder = rot.recovery || [];
-          const staffById = Object.fromEntries(staff.map((s) => [s.id, s.display]));
           mondayOrder = rotatableSlots.map(
             (_, i) => staffById[ruleOrder[i]] || ""
           );
+          // For Monday's seed, also skip people who are off on Monday
+          const mondayDate = dayDateStrs[0];
+          mondayOrder = mondayOrder.map((name) => {
+            if (!name) return name;
+            const id = idByDisplay[name];
+            if (id && isStaffOff(timeOff, id, mondayDate)) {
+              skippedAny = true;
+              return ""; // leave blank; supervisor decides who covers
+            }
+            return name;
+          });
           rotatableSlots.forEach((sl, i) => {
             sched.sections[section.id][sl.id][0] = mondayOrder[i];
           });
         }
 
-        // Advance each subsequent day
+        // Advance each subsequent day; before writing, blank out anyone
+        // who's marked off on that specific day so the supervisor can
+        // assign coverage explicitly.
         let prevOrder = [...mondayOrder];
         for (let d = 1; d < 5; d++) {
           const last = prevOrder[prevOrder.length - 1];
-          const newOrder = [last, ...prevOrder.slice(0, -1)];
+          const rotated = [last, ...prevOrder.slice(0, -1)];
+          const dayDateStr = dayDateStrs[d];
+          const newOrder = rotated.map((name) => {
+            if (!name) return name;
+            const id = idByDisplay[name];
+            if (id && isStaffOff(timeOff, id, dayDateStr)) {
+              skippedAny = true;
+              return ""; // blank slot for the day
+            }
+            return name;
+          });
           rotatableSlots.forEach((sl, i) => {
             sched.sections[section.id][sl.id][d] = newOrder[i];
           });
-          prevOrder = newOrder;
+          // For the rotation chain, keep the rotated name (not blanked)
+          // so the cycle continues correctly when the person returns
+          prevOrder = rotated;
         }
 
         // Apply fixed slots
@@ -1005,19 +1107,64 @@ export default function App() {
             name = sched.sections[section.id][sl.id][0] || "";
           }
           if (name) {
-            sched.sections[section.id][sl.id] = [name, name, name, name, name];
+            // Apply per-day, blanking on out-days
+            const filledRow = dayDateStrs.map((ds) => {
+              const id = idByDisplay[name];
+              if (id && isStaffOff(timeOff, id, ds)) {
+                skippedAny = true;
+                return "";
+              }
+              return name;
+            });
+            sched.sections[section.id][sl.id] = filledRow;
           }
         });
       });
       return sched;
     });
-    showToast("Rotations auto-filled based on Monday's roster", "success");
+    if (skippedAny) {
+      showToast("Rotations filled — out-of-office days left blank for coverage", "success");
+    } else {
+      showToast("Rotations auto-filled based on Monday's roster", "success");
+    }
   };
 
   const clearWeek = () => {
     if (!confirm("Clear all assignments for this location this week?")) return;
     updateSchedule(() => emptyLocationSchedule(currentLocation));
     showToast("Week cleared", "info");
+  };
+
+  /* ---- Time-off handlers ---- */
+  const handleAddTimeOff = async (staffId, startDate, endDate, reason) => {
+    try {
+      markLocalEdit();
+      setSyncStatus("saving");
+      const created = await addTimeOff(staffId, startDate, endDate, reason);
+      setTimeOff((prev) => [...prev, created].sort((a, b) =>
+        a.startDate.localeCompare(b.startDate)
+      ));
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus("idle"), 1500);
+      showToast("Time off added", "success");
+    } catch (e) {
+      setSyncStatus("error");
+      showToast("Couldn't add time off: " + e.message, "error");
+    }
+  };
+
+  const handleDeleteTimeOff = async (id) => {
+    try {
+      markLocalEdit();
+      setSyncStatus("saving");
+      await deleteTimeOff(id);
+      setTimeOff((prev) => prev.filter((t) => t.id !== id));
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus("idle"), 1500);
+    } catch (e) {
+      setSyncStatus("error");
+      showToast("Couldn't remove time off: " + e.message, "error");
+    }
   };
 
   /* ---- JSON export/import for sharing state between supervisors ---- */
@@ -1263,6 +1410,7 @@ export default function App() {
           <nav className="flex items-center gap-1 ga-card-soft rounded-md p-1 border ga-border-soft">
             {[
               { id: "schedule", label: "Schedule", Icon: Calendar },
+              { id: "allsites", label: "All Sites", Icon: Layers },
               { id: "staff", label: "Staff", Icon: Users },
               { id: "rules", label: "Rules", Icon: Settings },
             ].map(({ id, label, Icon }) => (
@@ -1362,6 +1510,7 @@ export default function App() {
             schedule={currentSchedule}
             updateSchedule={updateSchedule}
             staff={staff}
+            timeOff={timeOff}
             validation={validation}
             onCopyPrevious={copyPreviousWeek}
             onAutoFill={autoFillRotations}
@@ -1370,10 +1519,30 @@ export default function App() {
           />
         )}
         {view === "staff" && (
-          <StaffView staff={staff} setStaff={setStaff} />
+          <StaffView
+            staff={staff}
+            setStaff={setStaff}
+            timeOff={timeOff}
+            onAddTimeOff={handleAddTimeOff}
+            onDeleteTimeOff={handleDeleteTimeOff}
+          />
         )}
         {view === "rules" && (
           <RulesView rules={rules} setRules={setRules} staff={staff} />
+        )}
+        {view === "allsites" && (
+          <AllSitesView
+            schedules={schedules}
+            currentWeek={currentWeek}
+            setCurrentWeek={setCurrentWeek}
+            shiftWeek={shiftWeek}
+            staff={staff}
+            timeOff={timeOff}
+            onJumpToLocation={(loc) => {
+              setCurrentLocation(loc);
+              setView("schedule");
+            }}
+          />
         )}
       </main>
 
@@ -1440,6 +1609,7 @@ function ScheduleView({
   schedule,
   updateSchedule,
   staff,
+  timeOff,
   validation,
   onCopyPrevious,
   onAutoFill,
@@ -1448,8 +1618,13 @@ function ScheduleView({
 }) {
   const config = LOCATION_CONFIGS[currentLocation];
 
-  // Filter staff for dropdown options based on slot's role + location eligibility
-  const getOptions = (section, slot) => {
+  // Pre-compute YYYY-MM-DD for each day (used for time-off lookup)
+  const dayDateStrs = useMemo(() => dayDates.map(isoDate), [dayDates]);
+
+  // Filter staff for dropdown options based on slot's role + location eligibility.
+  // Returns options annotated with `off` flag for the given dayIdx so the
+  // dropdown can dim out-of-office staff visually.
+  const getOptions = (section, slot, dayIdx) => {
     let allowedRole;
     if (section.role === "RN_OR_TECH") {
       if (slot.allowedRole === ROLES.RN) allowedRole = null; // allow any for seats (with warning)
@@ -1462,7 +1637,14 @@ function ScheduleView({
       list = list.filter((s) => s.role === allowedRole);
     }
     list = list.filter((s) => s.eligible.includes(currentLocation));
-    return list.slice().sort((a, b) => a.display.localeCompare(b.display));
+    const dateStr = dayDateStrs[dayIdx];
+    // Annotate each option with an `off` flag, then sort: in-office first, then off
+    return list
+      .map((s) => ({ ...s, off: dateStr ? isStaffOff(timeOff, s.id, dateStr) : false }))
+      .sort((a, b) => {
+        if (a.off !== b.off) return a.off ? 1 : -1;
+        return a.display.localeCompare(b.display);
+      });
   };
 
   const setCell = (sectionId, slotId, dayIdx, value) => {
@@ -1654,7 +1836,7 @@ function ScheduleView({
                         <Cell
                           key={dayIdx}
                           value={assignments[dayIdx]}
-                          options={getOptions(section, slot)}
+                          options={getOptions(section, slot, dayIdx)}
                           onChange={(v) => setCell(section.id, slot.id, dayIdx, v)}
                           warnings={cellWarnings[`${assignments[dayIdx]}-${dayIdx}`]}
                         />
@@ -1676,7 +1858,7 @@ function ScheduleView({
                     <Cell
                       key={dayIdx}
                       value={assignments[dayIdx]}
-                      options={getOptions(section, slot)}
+                      options={getOptions(section, slot, dayIdx)}
                       onChange={(v) => setCell(section.id, slot.id, dayIdx, v)}
                       warnings={cellWarnings[`${assignments[dayIdx]}-${dayIdx}`]}
                     />
@@ -1760,6 +1942,8 @@ function ScheduleView({
 
 function Cell({ value, options, onChange, warnings }) {
   const hasWarn = warnings && warnings.length > 0;
+  const inOffice = options.filter((o) => !o.off);
+  const outToday = options.filter((o) => o.off);
   return (
     <div
       className={`border-l ga-border-soft assignment-cell cell-hover relative ${
@@ -1776,9 +1960,17 @@ function Cell({ value, options, onChange, warnings }) {
         {value && !options.find((o) => o.display === value) && (
           <option value={value}>{value} (off-list)</option>
         )}
-        {options.map((o) => (
+        {inOffice.map((o) => (
           <option key={o.id} value={o.display}>
             {o.display}
+          </option>
+        ))}
+        {outToday.length > 0 && (
+          <option disabled value="__sep__">────── out today ──────</option>
+        )}
+        {outToday.map((o) => (
+          <option key={o.id} value={o.display}>
+            {o.display} (off)
           </option>
         ))}
       </select>
@@ -1811,10 +2003,24 @@ function ActionButton({ icon: Icon, label, onClick, solid, accent, danger }) {
 /* ============================================================
    Staff View
 ============================================================ */
-function StaffView({ staff, setStaff }) {
+function StaffView({ staff, setStaff, timeOff, onAddTimeOff, onDeleteTimeOff }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
+  const [timeOffPopover, setTimeOffPopover] = useState(null); // staff id
+
+  // Today's date as YYYY-MM-DD for "currently out" badges
+  const todayStr = useMemo(() => isoDate(new Date()), []);
+
+  // Build a map: staffId -> ordered list of their off ranges
+  const timeOffByStaff = useMemo(() => {
+    const map = {};
+    (timeOff || []).forEach((t) => {
+      if (!map[t.staffId]) map[t.staffId] = [];
+      map[t.staffId].push(t);
+    });
+    return map;
+  }, [timeOff]);
 
   const filtered = useMemo(() => {
     return staff
@@ -1913,24 +2119,37 @@ function StaffView({ staff, setStaff }) {
 
       {/* Table */}
       <div className="ga-card border ga-border rounded-sm overflow-hidden">
-        <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] bg-[#1C2A43]/40 border-b ga-border text-[11px] font-mono text-ga-dim uppercase tracking-wider">
+        <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_1.6fr_110px_auto] bg-[#1C2A43]/40 border-b ga-border text-[11px] font-mono text-ga-dim uppercase tracking-wider">
           <div className="px-3 py-2">Display Name</div>
           <div className="px-3 py-2">Full Name</div>
           <div className="px-3 py-2">Role</div>
           <div className="px-3 py-2">Primary</div>
-          <div className="px-3 py-2">Eligible Locations</div>
+          <div className="px-3 py-2">Eligible</div>
+          <div className="px-3 py-2">Time Off</div>
           <div className="px-3 py-2 w-16"></div>
         </div>
-        {filtered.map((s) => (
-          <StaffRow
-            key={s.id}
-            staff={s}
-            editing={editing === s.id}
-            setEditing={setEditing}
-            onUpdate={(patch) => updateStaff(s.id, patch)}
-            onDelete={() => deleteStaff(s.id)}
-          />
-        ))}
+        {filtered.map((s) => {
+          const offs = timeOffByStaff[s.id] || [];
+          const isCurrentlyOff = offs.some(
+            (t) => todayStr >= t.startDate && todayStr <= t.endDate
+          );
+          return (
+            <StaffRow
+              key={s.id}
+              staff={s}
+              editing={editing === s.id}
+              setEditing={setEditing}
+              onUpdate={(patch) => updateStaff(s.id, patch)}
+              onDelete={() => deleteStaff(s.id)}
+              offs={offs}
+              isCurrentlyOff={isCurrentlyOff}
+              popoverOpen={timeOffPopover === s.id}
+              setPopoverOpen={(open) => setTimeOffPopover(open ? s.id : null)}
+              onAddTimeOff={onAddTimeOff}
+              onDeleteTimeOff={onDeleteTimeOff}
+            />
+          );
+        })}
         {filtered.length === 0 && (
           <div className="p-8 text-center text-sm text-ga-muted">
             No staff match this filter
@@ -1941,7 +2160,19 @@ function StaffView({ staff, setStaff }) {
   );
 }
 
-function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
+function StaffRow({
+  staff: s,
+  editing,
+  setEditing,
+  onUpdate,
+  onDelete,
+  offs,
+  isCurrentlyOff,
+  popoverOpen,
+  setPopoverOpen,
+  onAddTimeOff,
+  onDeleteTimeOff,
+}) {
   const toggleEligible = (loc) => {
     const next = s.eligible.includes(loc)
       ? s.eligible.filter((l) => l !== loc)
@@ -1950,7 +2181,7 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
   };
 
   return (
-    <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_2fr_auto] border-t ga-border-soft hover:bg-[#1A2538]/40 text-sm items-center">
+    <div className="grid grid-cols-[1.3fr_1.5fr_90px_1fr_1.6fr_110px_auto] border-t ga-border-soft hover:bg-[#1A2538]/40 text-sm items-center">
       <div className="px-3 py-2">
         {editing ? (
           <input
@@ -2019,6 +2250,37 @@ function StaffRow({ staff: s, editing, setEditing, onUpdate, onDelete }) {
             </button>
           );
         })}
+      </div>
+      <div className="px-3 py-2 relative">
+        <button
+          onClick={() => setPopoverOpen(!popoverOpen)}
+          className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+            isCurrentlyOff
+              ? "bg-amber-500/20 text-amber-200 border-amber-500/40"
+              : offs.length > 0
+                ? "bg-[#162238] text-ga-dim ga-border hover:border-ga-accent"
+                : "bg-transparent text-ga-muted ga-border-soft hover:border-ga-accent hover:text-ga-dim"
+          }`}
+          title={
+            isCurrentlyOff
+              ? "Currently out"
+              : offs.length > 0
+                ? `${offs.length} upcoming/past off period(s)`
+                : "Mark time off"
+          }
+        >
+          <CalendarOff size={11} />
+          {isCurrentlyOff ? "Out today" : offs.length > 0 ? `${offs.length}` : "Mark"}
+        </button>
+        {popoverOpen && (
+          <TimeOffPopover
+            staff={s}
+            offs={offs}
+            onAdd={onAddTimeOff}
+            onDelete={onDeleteTimeOff}
+            onClose={() => setPopoverOpen(false)}
+          />
+        )}
       </div>
       <div className="px-3 py-2 flex items-center gap-1">
         <button
@@ -2274,6 +2536,354 @@ function RotationEditor({ label, sectionKey, order, candidates, staffById, onMov
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+   TimeOffPopover — date-range entry for one staff member
+============================================================ */
+function TimeOffPopover({ staff, offs, onAdd, onDelete, onClose }) {
+  const today = isoDate(new Date());
+  const [start, setStart] = useState(today);
+  const [end, setEnd] = useState(today);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!start || !end) return;
+    if (end < start) {
+      alert("End date must be on or after start date.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onAdd(staff.id, start, end, reason);
+      setReason("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Backdrop captures off-clicks */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+
+      <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-[#0F1A2E] border ga-border rounded-md shadow-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="font-display text-sm font-semibold text-ga">
+              {staff.display}
+            </div>
+            <div className="text-[10px] font-mono-custom text-ga-muted uppercase tracking-wider">
+              Time off
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-ga-dim hover:text-ga rounded hover:bg-[#1C2A43]"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Existing periods */}
+        {offs.length > 0 ? (
+          <div className="mb-3 space-y-1 max-h-40 overflow-y-auto">
+            {offs.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-2 bg-[#162238] border ga-border-soft rounded px-2 py-1.5"
+              >
+                <div className="text-xs">
+                  <div className="font-mono-custom text-ga">
+                    {t.startDate} → {t.endDate}
+                  </div>
+                  {t.reason && (
+                    <div className="text-[11px] text-ga-muted mt-0.5">{t.reason}</div>
+                  )}
+                </div>
+                <button
+                  onClick={() => onDelete(t.id)}
+                  className="p-1 text-rose-400 hover:text-rose-200 rounded hover:bg-rose-950/30"
+                  title="Remove this period"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-ga-muted mb-3 italic">No time off recorded yet.</p>
+        )}
+
+        {/* Add new */}
+        <form onSubmit={submit} className="space-y-2 pt-3 border-t ga-border-soft">
+          <div className="flex items-center gap-2">
+            <label className="flex-1">
+              <span className="text-[10px] font-mono-custom text-ga-dim uppercase tracking-wider">From</span>
+              <input
+                type="date"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className="mt-0.5 w-full px-2 py-1 text-xs bg-[#0B1220] border ga-border rounded text-ga outline-none focus:border-ga-accent"
+              />
+            </label>
+            <label className="flex-1">
+              <span className="text-[10px] font-mono-custom text-ga-dim uppercase tracking-wider">To</span>
+              <input
+                type="date"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className="mt-0.5 w-full px-2 py-1 text-xs bg-[#0B1220] border ga-border rounded text-ga outline-none focus:border-ga-accent"
+              />
+            </label>
+          </div>
+          <input
+            type="text"
+            placeholder="Reason (optional)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full px-2 py-1 text-xs bg-[#0B1220] border ga-border rounded text-ga outline-none focus:border-ga-accent placeholder:text-ga-muted"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-ga-accent text-[#0B1220] rounded hover:bg-[#0EA5E9] disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            Add time off
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================================================
+   AllSitesView — weekly day-strip across all 4 locations
+   --------------------------------------------------------------
+   Read-only overview. Each cell shows compressed assignments for
+   that location/day. Cross-location double-bookings are highlighted.
+============================================================ */
+function AllSitesView({
+  schedules,
+  currentWeek,
+  setCurrentWeek,
+  shiftWeek,
+  staff,
+  timeOff,
+  onJumpToLocation,
+}) {
+  const monday = parseLocalDate(currentWeek);
+  const dayDates = getDayDates(monday);
+  const dayDateStrs = dayDates.map(isoDate);
+
+  // Build a "name -> [locations]" map per day to detect cross-location duplicates
+  const duplicatesByDay = useMemo(() => {
+    const out = DAY_KEYS.map(() => ({}));
+    LOCATIONS.forEach((loc) => {
+      const sched = schedules[currentWeek]?.[loc];
+      if (!sched) return;
+      const config = LOCATION_CONFIGS[loc];
+      config.sections.forEach((section) => {
+        section.slots.forEach((slot) => {
+          DAY_KEYS.forEach((_, dayIdx) => {
+            const name = sched.sections?.[section.id]?.[slot.id]?.[dayIdx];
+            if (!name || !name.trim()) return;
+            if (!out[dayIdx][name]) out[dayIdx][name] = new Set();
+            out[dayIdx][name].add(loc);
+          });
+        });
+      });
+    });
+    // Reduce to a set of names that appear in 2+ locations on that day
+    return out.map((m) => {
+      const dups = new Set();
+      Object.entries(m).forEach(([name, locs]) => {
+        if (locs.size > 1) dups.add(name);
+      });
+      return dups;
+    });
+  }, [schedules, currentWeek]);
+
+  // Helper: for a given location/day, return a flat list of {label, names[]}
+  // grouped by section. Empty sections are skipped.
+  const collectAssignments = (loc, dayIdx) => {
+    const sched = schedules[currentWeek]?.[loc];
+    if (!sched) return [];
+    const config = LOCATION_CONFIGS[loc];
+    const groups = [];
+    config.sections.forEach((section) => {
+      const names = section.slots
+        .map((slot) => sched.sections?.[section.id]?.[slot.id]?.[dayIdx])
+        .filter((n) => n && n.trim());
+      if (names.length > 0) {
+        groups.push({ label: section.label, names });
+      }
+    });
+    return groups;
+  };
+
+  const staffById = useMemo(() => {
+    const m = {};
+    staff.forEach((s) => (m[s.display] = s));
+    return m;
+  }, [staff]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ga">
+            All Sites — Week View
+          </h2>
+          <p className="text-sm text-ga-dim mt-0.5">
+            All four locations, M–F, for the selected week. Click a cell to jump to that location's editor.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shiftWeek(-1)}
+            className="p-2 rounded-md hover:bg-[#1C2A43] hover:text-ga-accent text-ga-dim transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="px-4 py-2 bg-[#162238] border ga-border rounded-md min-w-[200px] text-center">
+            <div className="font-body text-sm font-semibold text-ga">
+              {formatWeekRange(monday)}
+            </div>
+            <div className="text-[10px] font-mono-custom text-ga-accent tracking-[0.15em] uppercase mt-0.5">
+              Week of {monday.toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+            </div>
+          </div>
+          <button
+            onClick={() => shiftWeek(1)}
+            className="p-2 rounded-md hover:bg-[#1C2A43] hover:text-ga-accent text-ga-dim transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Cross-location duplicate banner */}
+      {duplicatesByDay.some((s) => s.size > 0) && (
+        <div className="mb-4 p-3 bg-amber-950/30 border border-amber-700/50 rounded-md flex items-start gap-2">
+          <AlertTriangle size={14} className="text-amber-300 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-amber-200">
+            <span className="font-semibold">Cross-location appearances detected.</span>{" "}
+            Names highlighted below appear at multiple locations on the same day. Verify
+            that's intentional (e.g., a floater).
+          </div>
+        </div>
+      )}
+
+      {/* Grid */}
+      <div className="ga-card border ga-border rounded-md overflow-hidden">
+        {/* Day header */}
+        <div className="grid grid-cols-[140px_repeat(5,1fr)] border-b ga-border bg-[#1C2A43]/40">
+          <div className="px-3 py-3 text-[11px] font-mono-custom text-ga-muted tracking-wider uppercase">
+            Location
+          </div>
+          {DAYS.map((d, i) => (
+            <div key={d} className="px-3 py-3 border-l ga-border-soft">
+              <div className="font-body text-sm font-semibold text-ga">{d}</div>
+              <div className="text-[10px] font-mono-custom text-ga-muted">
+                {formatDateShort(dayDates[i])}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Location rows */}
+        {LOCATIONS.map((loc) => (
+          <div
+            key={loc}
+            className="grid grid-cols-[140px_repeat(5,1fr)] border-t ga-border-soft hover:bg-[#1A2538]/30 transition-colors"
+          >
+            <div className="px-3 py-3 flex flex-col justify-center bg-[#1C2A43]/20">
+              <button
+                onClick={() => onJumpToLocation(loc)}
+                className="text-left"
+              >
+                <div className="flex items-center gap-2 font-body font-semibold text-ga hover:text-ga-accent">
+                  <Building2 size={14} />
+                  {loc}
+                </div>
+                <div className="text-[10px] font-mono-custom text-ga-muted tracking-wide uppercase mt-0.5">
+                  {LOC_META[loc].code} · {LOC_META[loc].rooms} rm
+                </div>
+              </button>
+            </div>
+            {DAY_KEYS.map((_, dayIdx) => {
+              const groups = collectAssignments(loc, dayIdx);
+              const dups = duplicatesByDay[dayIdx];
+              return (
+                <button
+                  key={dayIdx}
+                  onClick={() => onJumpToLocation(loc)}
+                  className="border-l ga-border-soft p-2 text-left hover:bg-[#23314C]/30 transition-colors min-h-[120px] align-top"
+                >
+                  {groups.length === 0 ? (
+                    <span className="text-[11px] text-ga-muted italic">empty</span>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {groups.map((g) => (
+                        <div key={g.label}>
+                          <div className="text-[9px] font-mono-custom text-ga-muted uppercase tracking-wider mb-0.5">
+                            {g.label}
+                          </div>
+                          <div className="text-[11px] text-ga-dim leading-snug flex flex-wrap gap-x-1.5 gap-y-0.5">
+                            {g.names.map((n, i) => {
+                              const isDup = dups.has(n);
+                              const isOff = isDisplayOff(timeOff, staffById, n, dayDateStrs[dayIdx]);
+                              return (
+                                <span
+                                  key={`${n}-${i}`}
+                                  className={
+                                    isDup
+                                      ? "text-amber-300 font-semibold"
+                                      : isOff
+                                        ? "text-rose-300 line-through"
+                                        : "text-ga"
+                                  }
+                                  title={
+                                    isDup
+                                      ? `${n} is at multiple locations on this day`
+                                      : isOff
+                                        ? `${n} is marked OFF`
+                                        : undefined
+                                  }
+                                >
+                                  {n}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center gap-4 text-[11px] text-ga-muted font-mono-custom">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-300" />
+          Cross-location floater
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-rose-300" />
+          Marked off (still scheduled)
+        </span>
+      </div>
     </div>
   );
 }
