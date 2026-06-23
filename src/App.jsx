@@ -26,9 +26,11 @@ import {
   CloudOff,
   CalendarOff,
   Layers,
+  RefreshCw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import SignIn from "./SignIn.jsx";
+import ResetPassword from "./ResetPassword.jsx";
 import {
   isConfigured as supabaseConfigured,
   loadAllStaff,
@@ -121,17 +123,18 @@ function buildLocationConfig(loc) {
   }
 
   // Prep configuration
+  // PH (Prep Help) accepts either RN or Tech; regular prep slots stay RN-only.
   let prepSlots;
   if (loc === "Halton") {
     prepSlots = [
       { id: "prep1", label: "" },
       { id: "prep2", label: "" },
-      { id: "prep_ph", label: "PH" },
+      { id: "prep_ph", label: "PH", allowedRole: "RN_OR_TECH" },
     ];
   } else if (loc === "Augusta") {
     prepSlots = [
       { id: "prep1", label: "6:45am" },
-      { id: "prep_ph", label: "PH" },
+      { id: "prep_ph", label: "PH", allowedRole: "RN_OR_TECH" },
     ];
   } else if (loc === "Clemson") {
     prepSlots = [{ id: "prep1", label: "6:45am" }];
@@ -603,6 +606,7 @@ export default function App() {
   /* ---- Auth state ---- */
   const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState(null);
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   /* ---- Application state ---- */
   const [view, setView] = useState("schedule"); // 'schedule' | 'staff' | 'rules' | 'allsites'
@@ -613,13 +617,15 @@ export default function App() {
   const [schedules, setSchedules] = useState({});
   const [timeOff, setTimeOff] = useState([]);
   const [currentWeek, setCurrentWeek] = useState(() =>
-    weekKey(getMonday(new Date(2026, 4, 4)))
+    weekKey(getMonday(new Date()))
   );
   const [currentLocation, setCurrentLocation] = useState("Halton");
   const [toast, setToast] = useState(null);
 
   /* ---- Cloud sync status: 'idle' | 'saving' | 'saved' | 'error' | 'remote' ---- */
   const [syncStatus, setSyncStatus] = useState("idle");
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const lastLocalEditRef = useRef(0);
 
   // Marks "we just saved" to suppress the realtime echo from triggering a refetch
@@ -645,7 +651,18 @@ export default function App() {
       } catch (e) {
         console.warn("Could not read existing session:", e);
       }
-      unsub = onAuthChange((s) => setSession(s));
+      unsub = onAuthChange((s, event) => {
+        // PASSWORD_RECOVERY fires when the user lands on the site via a
+        // password-reset link. Don't load the dashboard — show the reset screen instead.
+        if (event === "PASSWORD_RECOVERY") {
+          setRecoveryMode(true);
+        }
+        // SIGNED_OUT clears recovery mode as well
+        if (event === "SIGNED_OUT") {
+          setRecoveryMode(false);
+        }
+        setSession(s);
+      });
       setAuthReady(true);
     })();
     return () => unsub && unsub();
@@ -706,17 +723,36 @@ export default function App() {
 
       setLoaded(true);
       setLoadError(null);
+      setLastSyncedAt(Date.now());
     } catch (e) {
       console.error("Failed to load from Supabase:", e);
       setLoadError(e.message || String(e));
     }
   }, []);
 
+  /* ---- Manual refresh: pulls latest from cloud on demand ---- */
+  const manualRefresh = useCallback(async () => {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    try {
+      await refreshAll();
+      setToast({ msg: "Latest data loaded from cloud", kind: "success" });
+      setTimeout(() => setToast(null), 2500);
+    } catch (e) {
+      setToast({ msg: "Refresh failed: " + e.message, kind: "error" });
+      setTimeout(() => setToast(null), 3500);
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [refreshAll, manualRefreshing]);
+
   useEffect(() => {
     if (!session || !supabaseConfigured) return;
+    // Don't load the dashboard during password recovery
+    if (recoveryMode) return;
     setLoaded(false);
     refreshAll();
-  }, [session, refreshAll]);
+  }, [session, refreshAll, recoveryMode]);
 
   /* ============================================================
      3. Realtime subscriptions
@@ -732,6 +768,7 @@ export default function App() {
           const s = await loadAllStaff();
           setStaff(s);
           setSyncStatus("remote");
+          setLastSyncedAt(Date.now());
         } catch (e) {
           console.warn(e);
         }
@@ -748,6 +785,7 @@ export default function App() {
             rotationOrders: { ...INITIAL_RULES.rotationOrders, ...r.rotationOrders },
           });
           setSyncStatus("remote");
+          setLastSyncedAt(Date.now());
         } catch (e) {
           console.warn(e);
         }
@@ -781,6 +819,7 @@ export default function App() {
           }));
         }
         setSyncStatus("remote");
+        setLastSyncedAt(Date.now());
       })
     );
 
@@ -791,6 +830,7 @@ export default function App() {
           const t = await loadAllTimeOff();
           setTimeOff(t);
           setSyncStatus("remote");
+          setLastSyncedAt(Date.now());
         } catch (e) {
           console.warn(e);
         }
@@ -810,6 +850,7 @@ export default function App() {
           setSyncStatus("saving");
           await saveAllStaff(s);
           setSyncStatus("saved");
+          setLastSyncedAt(Date.now());
           setTimeout(() => setSyncStatus("idle"), 1500);
         } catch (e) {
           console.error("Save staff failed:", e);
@@ -826,6 +867,7 @@ export default function App() {
           setSyncStatus("saving");
           await saveAllRules(r);
           setSyncStatus("saved");
+          setLastSyncedAt(Date.now());
           setTimeout(() => setSyncStatus("idle"), 1500);
         } catch (e) {
           console.error("Save rules failed:", e);
@@ -874,6 +916,7 @@ export default function App() {
             setSyncStatus("saving");
             await saveOneSchedule(week, location, data);
             setSyncStatus("saved");
+            setLastSyncedAt(Date.now());
             setTimeout(() => setSyncStatus("idle"), 1500);
           } catch (e) {
             console.error("Save schedule failed:", e);
@@ -977,11 +1020,28 @@ export default function App() {
               message: `${name} not marked eligible for ${currentLocation} (${DAYS[dayIdx]}, ${section.label})`,
             });
           }
-          // role check
-          if (section.role === "RN_OR_TECH") {
-            if (slot.allowedRole === ROLES.RN && s.role !== ROLES.RN && s.role !== ROLES.TECH) {
-              // seat - allow RN or Tech but warn if not RN
+          // role check (slot.allowedRole takes precedence over section.role)
+          if (slot.allowedRole === "RN_OR_TECH") {
+            // PH-style slot: warn only if not RN or Tech
+            if (s.role !== ROLES.RN && s.role !== ROLES.TECH) {
+              warns.push({
+                type: "role",
+                day: DAYS[dayIdx],
+                name,
+                message: `${name} is ${s.role} but ${section.label} ${slot.label || ""} needs RN or Tech (${DAYS[dayIdx]})`,
+              });
             }
+          } else if (slot.allowedRole) {
+            if (s.role !== slot.allowedRole) {
+              warns.push({
+                type: "role",
+                day: DAYS[dayIdx],
+                name,
+                message: `${name} is ${s.role} but ${section.label} ${slot.label || ""} needs ${slot.allowedRole} (${DAYS[dayIdx]})`,
+              });
+            }
+          } else if (section.role === "RN_OR_TECH") {
+            // Recovery: seats prefer RN but Techs are also allowed; no warning either way
           } else if (section.role && s.role !== section.role) {
             warns.push({
               type: "role",
@@ -1145,6 +1205,7 @@ export default function App() {
         a.startDate.localeCompare(b.startDate)
       ));
       setSyncStatus("saved");
+      setLastSyncedAt(Date.now());
       setTimeout(() => setSyncStatus("idle"), 1500);
       showToast("Time off added", "success");
     } catch (e) {
@@ -1160,6 +1221,7 @@ export default function App() {
       await deleteTimeOff(id);
       setTimeOff((prev) => prev.filter((t) => t.id !== id));
       setSyncStatus("saved");
+      setLastSyncedAt(Date.now());
       setTimeout(() => setSyncStatus("idle"), 1500);
     } catch (e) {
       setSyncStatus("error");
@@ -1236,6 +1298,7 @@ export default function App() {
         setRules(parsed.rules);
         setSchedules(parsed.schedules);
         setSyncStatus("saved");
+        setLastSyncedAt(Date.now());
         setTimeout(() => setSyncStatus("idle"), 1500);
         showToast("Data imported and synced to cloud", "success");
       } catch (err) {
@@ -1361,6 +1424,19 @@ export default function App() {
     );
   }
 
+  // Password recovery mode: user clicked an email reset link.
+  // Show the password-setting screen regardless of session.
+  if (recoveryMode) {
+    return (
+      <ResetPassword
+        onComplete={() => {
+          setRecoveryMode(false);
+          // session was cleared by signOut in ResetPassword; SignIn will appear next
+        }}
+      />
+    );
+  }
+
   if (!session) {
     return <SignIn onSuccess={() => { /* auth state listener will update session */ }} />;
   }
@@ -1431,7 +1507,23 @@ export default function App() {
 
           {/* JSON data port + cloud status + sign-out */}
           <div className="flex items-center gap-2">
-            <SyncIndicator status={syncStatus} />
+            <SyncIndicator status={syncStatus} lastSyncedAt={lastSyncedAt} />
+
+            <button
+              onClick={manualRefresh}
+              disabled={manualRefreshing}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-ga-dim hover:text-ga-accent rounded-md hover:bg-[#1C2A43] transition-colors disabled:opacity-50"
+              title="Pull latest changes from the cloud now (other supervisors' edits update automatically; this is a manual catch-up)"
+            >
+              <RefreshCw
+                size={13}
+                strokeWidth={1.8}
+                className={manualRefreshing ? "animate-spin" : ""}
+              />
+              Refresh
+            </button>
+
+            <div className="w-px h-6 bg-[#23314C] mx-1" />
 
             <button
               onClick={triggerImport}
@@ -1557,8 +1649,16 @@ export default function App() {
 /* ============================================================
    SyncIndicator: shows current cloud-sync state in the header
 ============================================================ */
-function SyncIndicator({ status }) {
-  let icon, label, color;
+function SyncIndicator({ status, lastSyncedAt }) {
+  // Tick every 5s so the "synced X ago" label updates without saves
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!lastSyncedAt) return;
+    const id = setInterval(() => forceTick((t) => t + 1), 5000);
+    return () => clearInterval(id);
+  }, [lastSyncedAt]);
+
+  let icon, label, color, sublabel = null;
   switch (status) {
     case "saving":
       icon = <Loader2 size={12} className="animate-spin" />;
@@ -1585,14 +1685,25 @@ function SyncIndicator({ status }) {
       icon = <Cloud size={12} />;
       label = "Synced";
       color = "text-ga-muted";
+      if (lastSyncedAt) {
+        const secs = Math.floor((Date.now() - lastSyncedAt) / 1000);
+        if (secs < 10) sublabel = "just now";
+        else if (secs < 60) sublabel = `${secs}s ago`;
+        else if (secs < 3600) sublabel = `${Math.floor(secs / 60)}m ago`;
+        else sublabel = `${Math.floor(secs / 3600)}h ago`;
+      }
   }
   return (
     <div
       className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono-custom uppercase tracking-wider ${color}`}
-      title={`Cloud sync status: ${label}`}
+      title={
+        lastSyncedAt
+          ? `Cloud sync: ${label} (last activity ${new Date(lastSyncedAt).toLocaleTimeString()})`
+          : `Cloud sync: ${label}`
+      }
     >
       {icon}
-      <span>{label}</span>
+      <span>{label}{sublabel ? ` · ${sublabel}` : ""}</span>
     </div>
   );
 }
@@ -1624,17 +1735,29 @@ function ScheduleView({
   // Filter staff for dropdown options based on slot's role + location eligibility.
   // Returns options annotated with `off` flag for the given dayIdx so the
   // dropdown can dim out-of-office staff visually.
+  //
+  // Role resolution order:
+  //   1. slot.allowedRole === "RN_OR_TECH"  → allow RN or Tech
+  //   2. slot.allowedRole set to a specific role → that role only
+  //   3. otherwise → section.role (with RN_OR_TECH meaning any)
   const getOptions = (section, slot, dayIdx) => {
     let allowedRole;
-    if (section.role === "RN_OR_TECH") {
-      if (slot.allowedRole === ROLES.RN) allowedRole = null; // allow any for seats (with warning)
-      else allowedRole = null;
+    if (slot.allowedRole === "RN_OR_TECH") {
+      // PH-style slot: include both RNs and Techs
+      allowedRole = null;
+    } else if (slot.allowedRole) {
+      allowedRole = slot.allowedRole;
+    } else if (section.role === "RN_OR_TECH") {
+      allowedRole = null;
     } else {
       allowedRole = section.role;
     }
     let list = staff;
     if (allowedRole) {
       list = list.filter((s) => s.role === allowedRole);
+    } else if (slot.allowedRole === "RN_OR_TECH") {
+      // Restrict to RN or Tech only (exclude FD)
+      list = list.filter((s) => s.role === ROLES.RN || s.role === ROLES.TECH);
     }
     list = list.filter((s) => s.eligible.includes(currentLocation));
     const dateStr = dayDateStrs[dayIdx];

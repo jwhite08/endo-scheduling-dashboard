@@ -262,7 +262,27 @@ export async function getCurrentSession() {
 
 export function onAuthChange(callback) {
   const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(session);
+    callback(session, event);
   });
   return () => data.subscription.unsubscribe();
+}
+
+// Send a password-reset email. Supabase emails the user a link that
+// returns to the dashboard with a recovery token in the URL hash.
+export async function requestPasswordReset(email) {
+  const redirectTo =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/`
+      : undefined;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+  if (error) throw error;
+}
+
+// Called from the reset-password screen, after the user lands on the page
+// with a recovery session active (Supabase auto-establishes it from the URL).
+export async function updateUserPassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
